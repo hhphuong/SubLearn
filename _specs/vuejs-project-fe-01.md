@@ -28,10 +28,10 @@ figma_component (if used): N/A
 - Không có thay đổi nào đối với dự án backend hiện có trong `BE/SubLearn/`.
 
 ## Open Questions
-- Nên dùng Vue CLI, Vite (công cụ chuẩn hiện tại cho Vue.js), hay công cụ khởi tạo khác?
-- Có nên bật TypeScript cho dự án Vue.js này không?
-- Có thư viện UI/component hoặc phương pháp styling nào được ưu tiên (ví dụ Tailwind CSS) để đưa vào ngay từ đầu không?
-- Có nên đưa Vue Router và quản lý state (Pinia) vào bản khởi tạo ban đầu, hay để bổ sung sau khi cần?
+- Nên dùng Vue CLI, Vite (công cụ chuẩn hiện tại cho Vue.js), hay công cụ khởi tạo khác? dùng Vite
+- Có nên bật TypeScript cho dự án Vue.js này không? có 
+- Có thư viện UI/component hoặc phương pháp styling nào được ưu tiên (ví dụ Tailwind CSS) để đưa vào ngay từ đầu không? dùng bootstrap
+- Có nên đưa Vue Router và quản lý state (Pinia) vào bản khởi tạo ban đầu, hay để bổ sung sau khi cần? dùng router
 
 ## Testing Guidelines
 Create a test file(s) in the ./tests folder for the new feature, and create meaningful tests for the following cases, without going too heavy:
