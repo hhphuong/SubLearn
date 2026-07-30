@@ -42,10 +42,10 @@ function formatDate(iso: string) {
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <h3 class="h5 mb-1">{{ entry.displayWord }}</h3>
-          <span class="badge text-bg-light me-2"
+          <span class="badge entry-badge me-2"
             >{{ languageLabel(entry.sourceLanguage) }} → {{ languageLabel(entry.targetLanguage) }}</span
           >
-          <span class="badge text-bg-secondary">{{ entry.contextCount }} ngữ cảnh</span>
+          <span class="badge entry-badge-muted">{{ entry.contextCount }} ngữ cảnh</span>
         </div>
         <button class="btn btn-sm btn-outline-danger" type="button" @click="onDelete">Xóa</button>
       </div>
@@ -74,3 +74,17 @@ function formatDate(iso: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.entry-badge {
+  background: var(--brand-green-light);
+  color: var(--brand-green-dark);
+  font-weight: 600;
+}
+
+.entry-badge-muted {
+  background: var(--brand-bg);
+  color: var(--brand-muted);
+  font-weight: 600;
+}
+</style>

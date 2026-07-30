@@ -52,13 +52,14 @@ const segments = computed<Segment[]>(() => {
   border-bottom: 2px solid transparent;
 }
 .token-word {
-  border-bottom-color: #0d6efd;
+  border-bottom-color: var(--brand-green);
 }
 .token-phrase {
-  border-bottom-color: #fd7e14;
+  border-bottom-color: #f5a623;
   border-bottom-style: dashed;
 }
 .token:hover {
-  background-color: rgba(13, 110, 253, 0.1);
+  background-color: var(--brand-green-light);
+  border-radius: 4px;
 }
 </style>

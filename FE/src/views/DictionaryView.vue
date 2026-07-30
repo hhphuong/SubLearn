@@ -45,25 +45,22 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <h1 class="h4 mb-3">Từ điển của tôi</h1>
-    <div class="row g-2 mb-3">
-      <div class="col-12 col-sm-8">
-        <input v-model="searchInput" type="search" class="form-control" placeholder="Tìm từ..." />
-      </div>
-      <div class="col-12 col-sm-4">
-        <select v-model="dictionaryStore.targetLanguageFilter" class="form-select">
-          <option value="">Tất cả ngôn ngữ</option>
-          <option v-for="lang in TARGET_LANGUAGES" :key="lang.code" :value="lang.code">{{ lang.label }}</option>
-        </select>
-      </div>
+    <h1 class="page-title">📖 Từ điển của tôi</h1>
+    <div class="filters">
+      <input v-model="searchInput" type="search" class="form-control" placeholder="Tìm từ..." />
+      <select v-model="dictionaryStore.targetLanguageFilter" class="form-select">
+        <option value="">Tất cả ngôn ngữ</option>
+        <option v-for="lang in TARGET_LANGUAGES" :key="lang.code" :value="lang.code">{{ lang.label }}</option>
+      </select>
     </div>
 
     <div v-if="dictionaryStore.loading" class="text-center py-4">
-      <div class="spinner-border text-primary" role="status"></div>
+      <div class="spinner-border" role="status"></div>
     </div>
     <div v-else-if="dictionaryStore.error" class="alert alert-danger">{{ dictionaryStore.error }}</div>
-    <div v-else-if="dictionaryStore.entries.length === 0" class="text-muted text-center py-4">
-      Chưa có từ nào được lưu.
+    <div v-else-if="dictionaryStore.entries.length === 0" class="empty-state">
+      <div class="empty-state__icon">🗂️</div>
+      <p class="text-muted mb-0">Chưa có từ nào được lưu.</p>
     </div>
     <div v-else>
       <DictionaryEntryCard
@@ -78,7 +75,7 @@ onUnmounted(() => {
           v-for="p in totalPages"
           :key="p"
           class="btn btn-sm"
-          :class="p - 1 === dictionaryStore.page ? 'btn-primary' : 'btn-outline-secondary'"
+          :class="p - 1 === dictionaryStore.page ? 'btn-primary' : 'btn-outline-primary'"
           type="button"
           @click="goToPage(p - 1)"
         >
@@ -88,3 +85,41 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-bottom: 1.25rem;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.spinner-border {
+  color: var(--brand-green);
+}
+
+.empty-state {
+  background: #fff;
+  border: 1px dashed var(--brand-border);
+  border-radius: var(--brand-radius-md);
+  padding: 3rem 1rem;
+  text-align: center;
+}
+
+.empty-state__icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .filters {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

@@ -46,25 +46,33 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="row justify-content-center">
-    <div class="col-12 col-md-8 col-lg-6">
-      <h1 class="h3 mb-4">SubLearn — Học từ vựng qua video YouTube</h1>
+  <div class="home">
+    <section class="hero">
+      <div class="hero__text">
+        <h1 class="hero__title">Học ngoại ngữ dễ dàng qua bất kỳ video YouTube nào</h1>
+        <p class="hero__subtitle">
+          Dán link YouTube, đọc phụ đề song ngữ và bấm vào từ bất kỳ để tra nghĩa và lưu vào từ điển của bạn.
+        </p>
+      </div>
+      <div class="hero__icon" aria-hidden="true">🎬</div>
+    </section>
 
+    <div class="panel">
       <form v-if="!videoStore.videoId || videoStore.status === 'FAILED'" @submit.prevent="onSubmit">
         <div class="mb-3">
-          <label class="form-label" for="youtubeUrl">Link video YouTube</label>
+          <label class="form-label fw-semibold" for="youtubeUrl">Link video YouTube</label>
           <input
             id="youtubeUrl"
             v-model="youtubeUrl"
             type="url"
-            class="form-control"
+            class="form-control form-control-lg"
             placeholder="https://www.youtube.com/watch?v=..."
             required
           />
         </div>
         <div class="mb-3">
-          <label class="form-label" for="targetLanguage">Ngôn ngữ muốn học</label>
-          <select id="targetLanguage" v-model="targetLanguage" class="form-select">
+          <label class="form-label fw-semibold" for="targetLanguage">Ngôn ngữ muốn học</label>
+          <select id="targetLanguage" v-model="targetLanguage" class="form-select form-select-lg">
             <option v-for="lang in TARGET_LANGUAGES" :key="lang.code" :value="lang.code">{{ lang.label }}</option>
           </select>
         </div>
@@ -72,15 +80,15 @@ onUnmounted(() => {
         <div v-if="videoStore.status === 'FAILED'" class="alert alert-warning py-2">
           {{ failureMessage(videoStore.failureReason) }}
         </div>
-        <button class="btn btn-primary w-100" type="submit" :disabled="isSubmitting">
-          {{ isSubmitting ? 'Đang gửi...' : 'Bắt đầu' }}
+        <button class="btn btn-primary btn-lg w-100" type="submit" :disabled="isSubmitting">
+          {{ isSubmitting ? 'Đang gửi...' : 'Tạo video' }}
         </button>
       </form>
 
       <div v-else class="text-center py-4">
         <div v-if="videoStore.status === 'PENDING' || videoStore.status === 'PROCESSING'">
-          <div class="spinner-border text-primary mb-3" role="status"></div>
-          <p>Đang xử lý video{{ videoStore.title ? `: ${videoStore.title}` : '' }}...</p>
+          <div class="spinner-border mb-3" role="status"></div>
+          <p class="fw-semibold mb-1">Đang xử lý video{{ videoStore.title ? `: ${videoStore.title}` : '' }}...</p>
           <p class="text-muted small">Việc này có thể mất một vài phút tùy độ dài video.</p>
           <div v-if="videoStore.clientTimedOut" class="alert alert-warning py-2 mt-3">
             Quá trình xử lý đang mất nhiều thời gian hơn dự kiến.
@@ -91,3 +99,62 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.hero {
+  background: linear-gradient(135deg, var(--brand-green) 0%, var(--brand-green-dark) 100%);
+  border-radius: var(--brand-radius-lg);
+  color: #fff;
+  padding: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.hero__title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  margin-bottom: 0.6rem;
+}
+
+.hero__subtitle {
+  color: rgba(255, 255, 255, 0.9);
+  max-width: 46ch;
+  margin-bottom: 0;
+}
+
+.hero__icon {
+  font-size: 4rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid var(--brand-border);
+  border-radius: var(--brand-radius-md);
+  box-shadow: var(--brand-shadow);
+  padding: 2rem;
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.spinner-border {
+  color: var(--brand-green);
+}
+
+@media (max-width: 640px) {
+  .hero {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+</style>

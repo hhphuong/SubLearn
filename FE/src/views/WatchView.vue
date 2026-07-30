@@ -76,16 +76,20 @@ onUnmounted(() => {
   </div>
 
   <div v-else-if="youtubeVideoId">
-    <h1 class="h4 mb-3">{{ title }}</h1>
+    <h1 class="watch-title">{{ title }}</h1>
     <div class="row g-4">
       <div class="col-12 col-lg-7">
-        <YoutubePlayer ref="playerRef" :video-id="youtubeVideoId" @timeupdate="onTimeUpdate" />
+        <div class="player-frame">
+          <YoutubePlayer ref="playerRef" :video-id="youtubeVideoId" @timeupdate="onTimeUpdate" />
+        </div>
       </div>
       <div class="col-12 col-lg-5">
-        <div v-if="currentLine">
-          <SubtitleLine :line="currentLine" @token-click="onTokenClick" />
+        <div class="subtitle-panel">
+          <div v-if="currentLine">
+            <SubtitleLine :line="currentLine" @token-click="onTokenClick" />
+          </div>
+          <p v-else class="text-muted mb-0">Đang chờ phụ đề...</p>
         </div>
-        <p v-else class="text-muted">Đang chờ phụ đề...</p>
       </div>
     </div>
 
@@ -101,3 +105,26 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.watch-title {
+  font-size: 1.4rem;
+  font-weight: 800;
+  margin-bottom: 1.25rem;
+}
+
+.player-frame {
+  border-radius: var(--brand-radius-md);
+  overflow: hidden;
+  box-shadow: var(--brand-shadow);
+}
+
+.subtitle-panel {
+  background: #fff;
+  border: 1px solid var(--brand-border);
+  border-radius: var(--brand-radius-md);
+  box-shadow: var(--brand-shadow);
+  padding: 1.5rem;
+  height: 100%;
+}
+</style>

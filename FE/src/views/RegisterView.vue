@@ -40,20 +40,21 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="row justify-content-center">
-    <div class="col-12 col-sm-8 col-md-6 col-lg-4">
-      <h1 class="h3 mb-4">Đăng ký</h1>
+  <div class="auth-page">
+    <div class="auth-card">
+      <div class="auth-card__icon">🌱</div>
+      <h1 class="auth-card__title">Đăng ký</h1>
       <form @submit.prevent="onSubmit">
         <div class="mb-3">
-          <label class="form-label" for="displayName">Tên hiển thị</label>
+          <label class="form-label fw-semibold" for="displayName">Tên hiển thị</label>
           <input id="displayName" v-model="displayName" type="text" class="form-control" autocomplete="name" />
         </div>
         <div class="mb-3">
-          <label class="form-label" for="email">Email</label>
+          <label class="form-label fw-semibold" for="email">Email</label>
           <input id="email" v-model="email" type="email" class="form-control" required autocomplete="email" />
         </div>
         <div class="mb-3">
-          <label class="form-label" for="password">Mật khẩu (tối thiểu 8 ký tự)</label>
+          <label class="form-label fw-semibold" for="password">Mật khẩu (tối thiểu 8 ký tự)</label>
           <input
             id="password"
             v-model="password"
@@ -78,3 +79,37 @@ async function onSubmit() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.auth-page {
+  display: flex;
+  justify-content: center;
+  padding-top: 1rem;
+}
+
+.auth-card {
+  background: #fff;
+  border: 1px solid var(--brand-border);
+  border-radius: var(--brand-radius-md);
+  box-shadow: var(--brand-shadow);
+  padding: 2.5rem;
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+
+.auth-card__icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.auth-card__title {
+  font-size: 1.4rem;
+  font-weight: 800;
+  margin-bottom: 1.5rem;
+}
+
+.auth-card form {
+  text-align: left;
+}
+</style>
