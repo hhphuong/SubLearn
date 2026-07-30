@@ -3,6 +3,7 @@ package org.example.sublearn.video.dto;
 import java.util.List;
 
 public record SubtitleLineDto(
+        Long id,
         int sequence,
         long startMs,
         long endMs,

@@ -68,7 +68,7 @@ public class SubtitleService {
             List<SubtitleTokenDto> tokenDtos = tokensByLine.getOrDefault(line.getId(), List.of()).stream()
                     .map(t -> new SubtitleTokenDto(t.getSequence(), t.getStartCharOffset(), t.getEndCharOffset(), t.getSurfaceText(), t.getTokenType()))
                     .toList();
-            lineDtos.add(new SubtitleLineDto(line.getSequence(), line.getStartMs(), line.getEndMs(), line.getSourceText(), targetText, tokenDtos));
+            lineDtos.add(new SubtitleLineDto(line.getId(), line.getSequence(), line.getStartMs(), line.getEndMs(), line.getSourceText(), targetText, tokenDtos));
         }
 
         return new SubtitlePageResponse(page, size, linePage.getTotalElements(), video.getSourceLanguage(), targetLanguage, sameLanguage, lineDtos);

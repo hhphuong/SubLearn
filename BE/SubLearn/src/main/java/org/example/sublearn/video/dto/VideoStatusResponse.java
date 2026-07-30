@@ -9,6 +9,7 @@ public record VideoStatusResponse(
         String failureMessage,
         String title,
         String sourceLanguage,
-        Integer durationSeconds
+        Integer durationSeconds,
+        String youtubeVideoId
 ) {
 }

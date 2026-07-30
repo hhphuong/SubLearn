@@ -63,14 +63,14 @@ public class VideoService {
     public VideoStatusResponse getStatus(Long videoId) {
         Video video = getVideo(videoId);
         return new VideoStatusResponse(video.getStatus(), video.getFailureReason(), video.getFailureMessage(),
-                video.getTitle(), video.getSourceLanguage(), video.getDurationSeconds());
+                video.getTitle(), video.getSourceLanguage(), video.getDurationSeconds(), video.getYoutubeVideoId());
     }
 
     @Transactional(readOnly = true)
     public VideoSummaryResponse getSummary(Long videoId) {
         Video video = getVideo(videoId);
         return new VideoSummaryResponse(video.getId(), video.getTitle(), video.getSourceLanguage(),
-                video.getDurationSeconds(), video.getStatus());
+                video.getDurationSeconds(), video.getStatus(), video.getYoutubeVideoId());
     }
 
     Video getVideo(Long videoId) {

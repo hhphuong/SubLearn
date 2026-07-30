@@ -35,9 +35,9 @@ class SubtitleControllerTest {
     @Test
     void returnsSubtitleLinesInOrderWithSourceAndTargetTextAndTimestamps() throws Exception {
         SubtitlePageResponse response = new SubtitlePageResponse(0, 50, 2, "en", "vi", false, List.of(
-                new SubtitleLineDto(0, 1000, 4000, "Hello world", "Xin chao the gioi",
+                new SubtitleLineDto(101L, 0, 1000, 4000, "Hello world", "Xin chao the gioi",
                         List.of(new SubtitleTokenDto(0, 0, 5, "Hello", TokenType.WORD))),
-                new SubtitleLineDto(1, 4000, 7000, "This is a test", "Day la mot bai kiem tra", List.of())
+                new SubtitleLineDto(102L, 1, 4000, 7000, "This is a test", "Day la mot bai kiem tra", List.of())
         ));
         given(subtitleService.getSubtitles(1L, "vi", 0, 50)).willReturn(response);
 
@@ -47,6 +47,7 @@ class SubtitleControllerTest {
                 .andExpect(jsonPath("$.targetLanguage").value("vi"))
                 .andExpect(jsonPath("$.sameLanguage").value(false))
                 .andExpect(jsonPath("$.totalLines").value(2))
+                .andExpect(jsonPath("$.lines[0].id").value(101))
                 .andExpect(jsonPath("$.lines[0].sequence").value(0))
                 .andExpect(jsonPath("$.lines[0].startMs").value(1000))
                 .andExpect(jsonPath("$.lines[0].endMs").value(4000))
