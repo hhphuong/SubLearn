@@ -35,3 +35,7 @@ This repo uses a `/spec` slash command (`.claude/commands/spec.md`) to turn a sh
 - If the feature references a Figma component (`figma: <link>` in the input), it delegates to the `figma-design-extractor` subagent to pull design tokens before drafting the spec.
 
 Note: the `figma-design-extractor` agent definition (`.claude/agents/figma-design-extractor.md`) references a different project's stack (Next.js/React/Tailwind, "Pocket Heist") — it's a carried-over template and does not reflect this repo's actual (Spring Boot backend, not-yet-started frontend) stack. Treat its stack-specific implementation guidance as inapplicable here.
+
+## Checking Documentation
+ 
+**Important**: When implementing any lib/framework-specific features, ALWAYS check the appropriate documentation using the Context7 MCP server before writing any code.
