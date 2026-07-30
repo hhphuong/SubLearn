@@ -46,11 +46,11 @@ public class DictionaryEntry {
     private String displayWord;
 
     @Lob
-    @Column(name = "contextual_meaning")
+    @Column(name = "contextual_meaning", length = 65535)
     private String contextualMeaning;
 
     @Lob
-    @Column(name = "dictionary_meaning")
+    @Column(name = "dictionary_meaning", length = 65535)
     private String dictionaryMeaning;
 
     @JdbcTypeCode(SqlTypes.JSON)

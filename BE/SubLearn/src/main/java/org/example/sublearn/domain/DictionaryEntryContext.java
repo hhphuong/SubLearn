@@ -35,7 +35,7 @@ public class DictionaryEntryContext {
     private SubtitleLine subtitleLine;
 
     @Lob
-    @Column(name = "sentence_snapshot", nullable = false)
+    @Column(name = "sentence_snapshot", nullable = false, length = 65535)
     private String sentenceSnapshot;
 
     @CreationTimestamp

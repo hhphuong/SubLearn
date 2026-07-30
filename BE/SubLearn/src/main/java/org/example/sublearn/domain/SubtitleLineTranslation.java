@@ -30,7 +30,7 @@ public class SubtitleLineTranslation {
     private String targetLanguage;
 
     @Lob
-    @Column(name = "translated_text", nullable = false)
+    @Column(name = "translated_text", nullable = false, length = 65535)
     private String translatedText;
 
     @CreationTimestamp

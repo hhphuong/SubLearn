@@ -13,6 +13,8 @@ import org.example.sublearn.video.dto.VideoSubmitResponse;
 import org.example.sublearn.video.dto.VideoSummaryResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.EnumSet;
 import java.util.Set;
@@ -55,7 +57,17 @@ public class VideoService {
             video.setStatus(VideoStatus.PENDING);
         }
 
-        videoIngestionService.ingest(video.getId(), youtubeVideoId);
+        Long videoId = video.getId();
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    videoIngestionService.ingest(videoId, youtubeVideoId);
+                }
+            });
+        } else {
+            videoIngestionService.ingest(videoId, youtubeVideoId);
+        }
         return new VideoSubmitResponse(video.getId(), video.getStatus());
     }
 

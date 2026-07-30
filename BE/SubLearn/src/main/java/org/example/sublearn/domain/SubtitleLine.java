@@ -33,7 +33,7 @@ public class SubtitleLine {
     private long endMs;
 
     @Lob
-    @Column(name = "source_text", nullable = false)
+    @Column(name = "source_text", nullable = false, length = 65535)
     private String sourceText;
 
     protected SubtitleLine() {
