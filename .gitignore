@@ -1,5 +1,9 @@
 # Secrets - copy .env.example to .env and fill in real values locally
 .env
 
+# Browser authentication cookies used by yt-dlp
+/secrets/
+/www.youtube.com_cookies*.txt
+
 # Personal Claude Code permission overrides - not shared with the team
 .claude/settings.local.json

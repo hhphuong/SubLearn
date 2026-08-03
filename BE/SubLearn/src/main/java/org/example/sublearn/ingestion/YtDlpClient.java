@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -30,17 +31,20 @@ public class YtDlpClient {
 
     private final String ytDlpPath;
     private final long timeoutSeconds;
+    private final String cookiesPath;
     private final YtDlpErrorClassifier errorClassifier;
     private final ObjectMapper objectMapper;
     private final VideoProgressTracker progressTracker;
 
     public YtDlpClient(@Value("${sublearn.ytdlp.path}") String ytDlpPath,
                         @Value("${sublearn.ytdlp.timeout-seconds}") long timeoutSeconds,
+                        @Value("${sublearn.ytdlp.cookies-path}") String cookiesPath,
                         YtDlpErrorClassifier errorClassifier,
                         ObjectMapper objectMapper,
                         VideoProgressTracker progressTracker) {
         this.ytDlpPath = ytDlpPath;
         this.timeoutSeconds = timeoutSeconds;
+        this.cookiesPath = cookiesPath;
         this.errorClassifier = errorClassifier;
         this.objectMapper = objectMapper;
         this.progressTracker = progressTracker;
@@ -95,8 +99,11 @@ public class YtDlpClient {
 
     private SubtitleDiscovery discoverSubtitleLanguage(String youtubeVideoId, String requestedSourceLanguage)
             throws IOException, InterruptedException {
-        List<String> command = List.of(ytDlpPath, "--skip-download", "--dump-json", "--no-warnings",
-                "https://www.youtube.com/watch?v=" + youtubeVideoId);
+        List<String> command = new ArrayList<>(List.of(
+                ytDlpPath, "--skip-download", "--dump-json", "--no-warnings",
+                "--ignore-no-formats-error"));
+        addCookieOption(command);
+        command.add("https://www.youtube.com/watch?v=" + youtubeVideoId);
         Process process = new ProcessBuilder(command).start();
 
         LineCollector stdout = LineCollector.start(process.getInputStream(), null);
@@ -165,11 +172,12 @@ public class YtDlpClient {
 
     private void downloadSubtitle(Long videoId, String youtubeVideoId, String langCode, boolean manual, Path workDir)
             throws IOException, InterruptedException {
-        List<String> command = List.of(ytDlpPath,
+        List<String> command = new ArrayList<>(List.of(ytDlpPath,
                 manual ? "--write-sub" : "--write-auto-sub",
                 "--sub-format", "vtt", "--sub-langs", langCode,
-                "--skip-download", "--no-warnings",
-                "https://www.youtube.com/watch?v=" + youtubeVideoId);
+                "--skip-download", "--no-warnings", "--ignore-no-formats-error"));
+        addCookieOption(command);
+        command.add("https://www.youtube.com/watch?v=" + youtubeVideoId);
         ProcessBuilder processBuilder = new ProcessBuilder(command).directory(workDir.toFile());
         Process process = processBuilder.start();
 
@@ -213,6 +221,13 @@ public class YtDlpClient {
             return;
         }
         progressTracker.markFetchStage(videoId, percent);
+    }
+
+    private void addCookieOption(List<String> command) {
+        if (cookiesPath != null && !cookiesPath.isBlank()) {
+            command.add("--cookies");
+            command.add(cookiesPath);
+        }
     }
 
     private Optional<Path> findVttFile(Path workDir) throws IOException {
