@@ -38,7 +38,7 @@ class SubtitleControllerTest {
                 new SubtitleLineDto(101L, 0, 1000, 4000, "Hello world", "Xin chao the gioi",
                         List.of(new SubtitleTokenDto(0, 0, 5, "Hello", TokenType.WORD))),
                 new SubtitleLineDto(102L, 1, 4000, 7000, "This is a test", "Day la mot bai kiem tra", List.of())
-        ));
+        ), false);
         given(subtitleService.getSubtitles(1L, "vi", 0, 50)).willReturn(response);
 
         mockMvc.perform(get("/api/videos/1/subtitles").param("targetLanguage", "vi"))

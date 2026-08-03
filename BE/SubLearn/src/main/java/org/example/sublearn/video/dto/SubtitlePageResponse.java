@@ -9,6 +9,7 @@ public record SubtitlePageResponse(
         String sourceLanguage,
         String targetLanguage,
         boolean sameLanguage,
-        List<SubtitleLineDto> lines
+        List<SubtitleLineDto> lines,
+        boolean translationUnavailable
 ) {
 }

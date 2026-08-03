@@ -58,6 +58,12 @@ export function useYoutubePlayer(elementId: string, videoId: string) {
   const currentTimeMs = ref(0)
   const player = shallowRef<YoutubePlayerInstance | null>(null)
   let pollTimer: ReturnType<typeof setInterval> | null = null
+  // The IFrame API returns a Player object synchronously, but its methods (pauseVideo,
+  // seekTo, ...) aren't safe to call until onReady fires - calling them earlier throws
+  // "X is not a function". A user can click a transcript line/word before that happens
+  // (subtitles load independently of - and often faster than - the video iframe), so a
+  // seek requested that early is queued and replayed once the player is actually ready.
+  let pendingSeekMs: number | null = null
 
   async function init() {
     await loadYoutubeIframeApi()
@@ -67,6 +73,10 @@ export function useYoutubePlayer(elementId: string, videoId: string) {
       events: {
         onReady: () => {
           isReady.value = true
+          if (pendingSeekMs !== null) {
+            player.value?.seekTo(pendingSeekMs / 1000, true)
+            pendingSeekMs = null
+          }
           pollTimer = setInterval(() => {
             const current = player.value
             if (current) {
@@ -83,14 +93,20 @@ export function useYoutubePlayer(elementId: string, videoId: string) {
   })
 
   function play() {
+    if (!isReady.value) return
     player.value?.playVideo()
   }
 
   function pause() {
+    if (!isReady.value) return
     player.value?.pauseVideo()
   }
 
   function seekTo(ms: number) {
+    if (!isReady.value) {
+      pendingSeekMs = ms
+      return
+    }
     player.value?.seekTo(ms / 1000, true)
   }
 

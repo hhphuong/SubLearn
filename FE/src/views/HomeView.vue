@@ -3,13 +3,19 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVideoStore } from '@/stores/video.store'
 import { toApiError } from '@/api/errors'
-import { DEFAULT_TARGET_LANGUAGE_CODE, TARGET_LANGUAGES } from '@/utils/languages'
+import {
+  DEFAULT_SOURCE_LANGUAGE_CODE,
+  DEFAULT_TARGET_LANGUAGE_CODE,
+  SOURCE_LANGUAGES,
+  TARGET_LANGUAGES,
+} from '@/utils/languages'
 import { failureMessage } from '@/utils/failureMessages'
 
 const router = useRouter()
 const videoStore = useVideoStore()
 
 const youtubeUrl = ref('')
+const sourceLanguage = ref(DEFAULT_SOURCE_LANGUAGE_CODE)
 const targetLanguage = ref(DEFAULT_TARGET_LANGUAGE_CODE)
 const submitError = ref<string | null>(null)
 const isSubmitting = ref(false)
@@ -18,7 +24,7 @@ async function onSubmit() {
   submitError.value = null
   isSubmitting.value = true
   try {
-    await videoStore.submit(youtubeUrl.value)
+    await videoStore.submit(youtubeUrl.value, sourceLanguage.value)
   } catch (error) {
     submitError.value = toApiError(error).message
   } finally {
@@ -86,7 +92,14 @@ onUnmounted(() => {
           />
         </div>
         <div class="mb-3">
-          <label class="form-label fw-semibold" for="targetLanguage">Ngôn ngữ muốn học</label>
+          <label class="form-label fw-semibold" for="sourceLanguage">Ngôn ngữ của video</label>
+          <select id="sourceLanguage" v-model="sourceLanguage" class="form-select form-select-lg">
+            <option v-for="lang in SOURCE_LANGUAGES" :key="lang.code" :value="lang.code">{{ lang.label }}</option>
+          </select>
+          <div class="form-text">Chọn đúng ngôn ngữ video đang nói để lấy phụ đề chính xác.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold" for="targetLanguage">Ngôn ngữ muốn dịch sang</label>
           <select id="targetLanguage" v-model="targetLanguage" class="form-select form-select-lg">
             <option v-for="lang in TARGET_LANGUAGES" :key="lang.code" :value="lang.code">{{ lang.label }}</option>
           </select>

@@ -58,7 +58,7 @@ public class YtDlpClient {
      * YouTube offers (frequently 100+), which is slow and reliably tripped YouTube's rate
      * limiting (HTTP 429) - this keeps each ingestion to at most two lightweight requests.
      */
-    public YtDlpResult fetchCaptionsAndMetadata(Long videoId, String youtubeVideoId) {
+    public YtDlpResult fetchCaptionsAndMetadata(Long videoId, String youtubeVideoId, String requestedSourceLanguage) {
         Path workDir;
         try {
             workDir = Files.createTempDirectory("sublearn-ytdlp-");
@@ -66,7 +66,7 @@ public class YtDlpClient {
             throw new YtDlpProcessException(FailureReason.UNKNOWN_ERROR, "Could not create a temp directory for yt-dlp output");
         }
         try {
-            SubtitleDiscovery discovery = discoverSubtitleLanguage(youtubeVideoId);
+            SubtitleDiscovery discovery = discoverSubtitleLanguage(youtubeVideoId, requestedSourceLanguage);
             progressTracker.markFetchStage(videoId, 20);
 
             downloadSubtitle(videoId, youtubeVideoId, discovery.langCode(), discovery.manual(), workDir);
@@ -93,7 +93,8 @@ public class YtDlpClient {
     private record SubtitleDiscovery(String title, Integer durationSeconds, String langCode, boolean manual) {
     }
 
-    private SubtitleDiscovery discoverSubtitleLanguage(String youtubeVideoId) throws IOException, InterruptedException {
+    private SubtitleDiscovery discoverSubtitleLanguage(String youtubeVideoId, String requestedSourceLanguage)
+            throws IOException, InterruptedException {
         List<String> command = List.of(ytDlpPath, "--skip-download", "--dump-json", "--no-warnings",
                 "https://www.youtube.com/watch?v=" + youtubeVideoId);
         Process process = new ProcessBuilder(command).start();
@@ -118,11 +119,8 @@ public class YtDlpClient {
         JsonNode json = objectMapper.readTree(firstLine(stdoutText));
         String title = json.path("title").isMissingNode() ? null : json.path("title").stringValue(null);
         Integer duration = json.hasNonNull("duration") ? json.path("duration").asInt() : null;
-        // yt-dlp's own best-guess at the video's spoken language, e.g. "en" - used to pick
-        // the actual original track instead of whichever key happens to sort first.
-        String detectedLanguage = json.path("language").isMissingNode() ? null : json.path("language").stringValue(null);
 
-        Optional<String> manualLang = pickLanguageKey(json.path("subtitles"), detectedLanguage, null);
+        Optional<String> manualLang = pickLanguageKey(json.path("subtitles"), requestedSourceLanguage, null);
         if (manualLang.isPresent()) {
             return new SubtitleDiscovery(title, duration, manualLang.get(), true);
         }
@@ -130,16 +128,27 @@ public class YtDlpClient {
         // a "<lang>-orig" key alongside translations into every other language (100+ keys,
         // all plain language codes with no way to tell them apart by name alone) - without
         // this, picking "first key" reliably lands on "ab" (Abkhazian), alphabetically first.
-        String preferredOrigKey = detectedLanguage != null ? detectedLanguage + "-orig" : null;
-        Optional<String> autoLang = pickLanguageKey(json.path("automatic_captions"), detectedLanguage, preferredOrigKey);
+        String preferredOrigKey = requestedSourceLanguage + "-orig";
+        Optional<String> autoLang = pickLanguageKey(json.path("automatic_captions"), requestedSourceLanguage, preferredOrigKey);
         if (autoLang.isPresent()) {
             return new SubtitleDiscovery(title, duration, autoLang.get(), false);
         }
         throw new YtDlpProcessException(FailureReason.NO_CAPTIONS_AVAILABLE,
-                "No caption tracks (manual or auto-generated) are available for this video");
+                "No caption tracks are available in the requested language (" + requestedSourceLanguage + ") for this video");
     }
 
-    private Optional<String> pickLanguageKey(JsonNode captionsNode, String detectedLanguage, String preferredKey) {
+    /**
+     * Matches the user-chosen source language against the caption keys yt-dlp reports,
+     * preferring (in order): the given preferred key (e.g. "en-orig"), an exact code match,
+     * then a prefix match. Manual/community-contributed subtitle keys are sometimes
+     * suffixed with a contributor id (e.g. "en-eEY6OEpapPo") instead of the plain code, so
+     * an exact match alone misses them; falling back further to "first key found" would
+     * silently pick an unrelated language (observed: landed on Arabic for an all-English
+     * video whose only manual tracks had non-exact-matching keys) - so unlike earlier
+     * revisions of this method, there is no such last-resort fallback: no match means no
+     * captions in the language the user actually asked for.
+     */
+    private Optional<String> pickLanguageKey(JsonNode captionsNode, String requestedLanguage, String preferredKey) {
         if (captionsNode == null || captionsNode.isMissingNode() || !captionsNode.isObject()) {
             return Optional.empty();
         }
@@ -147,10 +156,11 @@ public class YtDlpClient {
         if (preferredKey != null && keys.contains(preferredKey)) {
             return Optional.of(preferredKey);
         }
-        if (detectedLanguage != null && keys.contains(detectedLanguage)) {
-            return Optional.of(detectedLanguage);
+        if (keys.contains(requestedLanguage)) {
+            return Optional.of(requestedLanguage);
         }
-        return keys.stream().findFirst();
+        String prefix = requestedLanguage + "-";
+        return keys.stream().filter(key -> key.startsWith(prefix)).findFirst();
     }
 
     private void downloadSubtitle(Long videoId, String youtubeVideoId, String langCode, boolean manual, Path workDir)

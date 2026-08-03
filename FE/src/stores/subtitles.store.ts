@@ -10,6 +10,7 @@ export const useSubtitlesStore = defineStore('subtitles', () => {
   const targetLanguage = ref<string | null>(null)
   const sourceLanguage = ref<string | null>(null)
   const sameLanguage = ref(false)
+  const translationUnavailable = ref(false)
   const totalLines = ref(0)
   const lines = ref<SubtitleLineDto[]>([])
   const loadedPages = ref(new Set<number>())
@@ -21,6 +22,7 @@ export const useSubtitlesStore = defineStore('subtitles', () => {
     targetLanguage.value = null
     sourceLanguage.value = null
     sameLanguage.value = false
+    translationUnavailable.value = false
     totalLines.value = 0
     lines.value = []
     loadedPages.value = new Set()
@@ -38,6 +40,9 @@ export const useSubtitlesStore = defineStore('subtitles', () => {
       sourceLanguage.value = response.sourceLanguage
       sameLanguage.value = response.sameLanguage
       totalLines.value = response.totalLines
+      if (response.translationUnavailable) {
+        translationUnavailable.value = true
+      }
 
       const merged = [...lines.value, ...response.lines]
       merged.sort((a, b) => a.sequence - b.sequence)
@@ -67,11 +72,22 @@ export const useSubtitlesStore = defineStore('subtitles', () => {
     }
   }
 
+  /** Loads every remaining page in order - used before building a full-transcript download. */
+  async function loadAllRemaining() {
+    const totalPages = Math.ceil(totalLines.value / PAGE_SIZE)
+    for (let page = 0; page < totalPages; page++) {
+      if (!loadedPages.value.has(page)) {
+        await fetchPage(page)
+      }
+    }
+  }
+
   return {
     videoId,
     targetLanguage,
     sourceLanguage,
     sameLanguage,
+    translationUnavailable,
     totalLines,
     lines,
     loadedPages,
@@ -80,6 +96,7 @@ export const useSubtitlesStore = defineStore('subtitles', () => {
     init,
     fetchPage,
     fetchNextPage,
+    loadAllRemaining,
     reset,
   }
 })

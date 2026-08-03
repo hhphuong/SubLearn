@@ -26,10 +26,10 @@ public class VideoIngestionService {
     }
 
     @Async("ingestionTaskExecutor")
-    public void ingest(Long videoId, String youtubeVideoId) {
+    public void ingest(Long videoId, String youtubeVideoId, String requestedSourceLanguage) {
         persister.markProcessing(videoId);
         try {
-            YtDlpResult result = ytDlpClient.fetchCaptionsAndMetadata(videoId, youtubeVideoId);
+            YtDlpResult result = ytDlpClient.fetchCaptionsAndMetadata(videoId, youtubeVideoId, requestedSourceLanguage);
             List<VttCue> cues = VttParser.parse(result.vttContent());
             progressTracker.beginSaving(videoId, result.title(), result.durationSeconds(), result.sourceLanguage(), cues.size());
             persister.persistLines(videoId, result.sourceLanguage(), cues);

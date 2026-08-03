@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { SubtitleLineDto, SubtitleTokenDto } from '@/types/api'
 
-const props = defineProps<{ line: SubtitleLineDto }>()
+const props = defineProps<{ line: SubtitleLineDto; showTranslation?: boolean }>()
 const emit = defineEmits<{ tokenClick: [token: SubtitleTokenDto] }>()
 
 interface Segment {
@@ -42,7 +42,7 @@ const segments = computed<Segment[]>(() => {
         <span v-else>{{ segment.text }}</span>
       </template>
     </p>
-    <p class="target-text text-muted mb-0">{{ line.targetText }}</p>
+    <p v-if="showTranslation" class="target-text text-muted mb-0">{{ line.targetText }}</p>
   </div>
 </template>
 

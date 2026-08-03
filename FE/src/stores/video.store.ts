@@ -89,9 +89,9 @@ export const useVideoStore = defineStore('video', () => {
     void tick()
   }
 
-  async function submit(youtubeUrl: string) {
+  async function submit(youtubeUrl: string, sourceLanguage: string) {
     reset()
-    const response = await videoApi.submit(youtubeUrl)
+    const response = await videoApi.submit(youtubeUrl, sourceLanguage)
     videoId.value = response.videoId
     status.value = response.status
     if (response.status === 'READY' || response.status === 'FAILED') {

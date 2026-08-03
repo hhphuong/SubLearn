@@ -43,7 +43,7 @@ public class VideoService {
     }
 
     @Transactional
-    public VideoSubmitResponse submitVideo(String youtubeUrl, Long userId) {
+    public VideoSubmitResponse submitVideo(String youtubeUrl, String sourceLanguage, Long userId) {
         String youtubeVideoId = youTubeUrlParser.extractVideoId(youtubeUrl)
                 .orElseThrow(() -> ApiException.badRequest("INVALID_URL", "This does not look like a valid YouTube video URL"));
 
@@ -66,11 +66,11 @@ public class VideoService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    videoIngestionService.ingest(videoId, youtubeVideoId);
+                    videoIngestionService.ingest(videoId, youtubeVideoId, sourceLanguage);
                 }
             });
         } else {
-            videoIngestionService.ingest(videoId, youtubeVideoId);
+            videoIngestionService.ingest(videoId, youtubeVideoId, sourceLanguage);
         }
         return new VideoSubmitResponse(video.getId(), video.getStatus());
     }

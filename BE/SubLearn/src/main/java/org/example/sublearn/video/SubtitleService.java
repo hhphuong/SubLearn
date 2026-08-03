@@ -60,18 +60,23 @@ public class SubtitleService {
 
         Map<Long, List<SubtitleToken>> tokensByLine = groupTokensByLine(lines);
         boolean sameLanguage = targetLanguage.equalsIgnoreCase(video.getSourceLanguage());
-        Map<Long, String> translations = sameLanguage ? Map.of() : resolveTranslations(video, lines, targetLanguage);
+        TranslationResult translationResult = sameLanguage
+                ? new TranslationResult(Map.of(), false)
+                : resolveTranslations(video, lines, targetLanguage);
 
         List<SubtitleLineDto> lineDtos = new ArrayList<>(lines.size());
         for (SubtitleLine line : lines) {
-            String targetText = sameLanguage ? line.getSourceText() : translations.getOrDefault(line.getId(), line.getSourceText());
+            String targetText = sameLanguage
+                    ? line.getSourceText()
+                    : translationResult.byLineId().getOrDefault(line.getId(), line.getSourceText());
             List<SubtitleTokenDto> tokenDtos = tokensByLine.getOrDefault(line.getId(), List.of()).stream()
                     .map(t -> new SubtitleTokenDto(t.getSequence(), t.getStartCharOffset(), t.getEndCharOffset(), t.getSurfaceText(), t.getTokenType()))
                     .toList();
             lineDtos.add(new SubtitleLineDto(line.getId(), line.getSequence(), line.getStartMs(), line.getEndMs(), line.getSourceText(), targetText, tokenDtos));
         }
 
-        return new SubtitlePageResponse(page, size, linePage.getTotalElements(), video.getSourceLanguage(), targetLanguage, sameLanguage, lineDtos);
+        return new SubtitlePageResponse(page, size, linePage.getTotalElements(), video.getSourceLanguage(), targetLanguage,
+                sameLanguage, lineDtos, translationResult.degraded());
     }
 
     private Map<Long, List<SubtitleToken>> groupTokensByLine(List<SubtitleLine> lines) {
@@ -85,9 +90,13 @@ public class SubtitleService {
         return grouped;
     }
 
-    private Map<Long, String> resolveTranslations(Video video, List<SubtitleLine> lines, String targetLanguage) {
+    /** @param degraded true if any line fell back to its source text because Gemini was unavailable/rate-limited. */
+    private record TranslationResult(Map<Long, String> byLineId, boolean degraded) {
+    }
+
+    private TranslationResult resolveTranslations(Video video, List<SubtitleLine> lines, String targetLanguage) {
         if (lines.isEmpty()) {
-            return Map.of();
+            return new TranslationResult(Map.of(), false);
         }
         Map<Long, String> byLineId = new HashMap<>();
         for (SubtitleLineTranslation translation : subtitleLineTranslationRepository.findBySubtitleLineInAndTargetLanguage(lines, targetLanguage)) {
@@ -96,7 +105,7 @@ public class SubtitleService {
 
         List<SubtitleLine> missing = lines.stream().filter(l -> !byLineId.containsKey(l.getId())).toList();
         if (missing.isEmpty()) {
-            return byLineId;
+            return new TranslationResult(byLineId, false);
         }
 
         try {
@@ -114,7 +123,8 @@ public class SubtitleService {
             for (SubtitleLine line : missing) {
                 byLineId.put(line.getId(), line.getSourceText());
             }
+            return new TranslationResult(byLineId, true);
         }
-        return byLineId;
+        return new TranslationResult(byLineId, false);
     }
 }

@@ -94,6 +94,7 @@ export interface SubtitlePageResponse {
   targetLanguage: string
   sameLanguage: boolean
   lines: SubtitleLineDto[]
+  translationUnavailable: boolean
 }
 
 export interface WordLookupRequest {

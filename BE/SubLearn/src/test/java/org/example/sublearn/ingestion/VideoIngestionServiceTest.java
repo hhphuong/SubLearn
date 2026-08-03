@@ -28,9 +28,9 @@ class VideoIngestionServiceTest {
                 00:00:01.000 --> 00:00:04.000
                 Hello world
                 """;
-        when(ytDlpClient.fetchCaptionsAndMetadata(1L, "abc123")).thenReturn(new YtDlpResult("Title", 10, "en", vtt));
+        when(ytDlpClient.fetchCaptionsAndMetadata(1L, "abc123", "en")).thenReturn(new YtDlpResult("Title", 10, "en", vtt));
 
-        service.ingest(1L, "abc123");
+        service.ingest(1L, "abc123", "en");
 
         verify(persister).markProcessing(1L);
         verify(progressTracker).beginSaving(1L, "Title", 10, "en", 1);
@@ -46,10 +46,10 @@ class VideoIngestionServiceTest {
         VideoProgressTracker progressTracker = mock(VideoProgressTracker.class);
         VideoIngestionService service = new VideoIngestionService(ytDlpClient, persister, progressTracker);
 
-        when(ytDlpClient.fetchCaptionsAndMetadata(1L, "abc123"))
+        when(ytDlpClient.fetchCaptionsAndMetadata(1L, "abc123", "en"))
                 .thenThrow(new YtDlpProcessException(FailureReason.NO_CAPTIONS_AVAILABLE, "no captions found"));
 
-        assertDoesNotThrow(() -> service.ingest(1L, "abc123"));
+        assertDoesNotThrow(() -> service.ingest(1L, "abc123", "en"));
 
         verify(persister).markProcessing(1L);
         verify(persister).markFailed(1L, FailureReason.NO_CAPTIONS_AVAILABLE, "no captions found");
@@ -62,9 +62,9 @@ class VideoIngestionServiceTest {
         VideoProgressTracker progressTracker = mock(VideoProgressTracker.class);
         VideoIngestionService service = new VideoIngestionService(ytDlpClient, persister, progressTracker);
 
-        when(ytDlpClient.fetchCaptionsAndMetadata(1L, "abc123")).thenThrow(new RuntimeException("boom"));
+        when(ytDlpClient.fetchCaptionsAndMetadata(1L, "abc123", "en")).thenThrow(new RuntimeException("boom"));
 
-        assertDoesNotThrow(() -> service.ingest(1L, "abc123"));
+        assertDoesNotThrow(() -> service.ingest(1L, "abc123", "en"));
 
         verify(persister).markFailed(eq(1L), eq(FailureReason.UNKNOWN_ERROR), any());
     }
