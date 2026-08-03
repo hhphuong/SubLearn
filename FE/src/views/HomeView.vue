@@ -68,6 +68,7 @@ onUnmounted(() => {
 
 <template>
   <div class="home">
+    <span class="visually-hidden">SubLearn</span>
     <section class="hero">
       <div class="hero__text">
         <h1 class="hero__title">Học ngoại ngữ dễ dàng qua bất kỳ video YouTube nào</h1>

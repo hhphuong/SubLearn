@@ -24,6 +24,7 @@ const loadError = ref<string | null>(null)
 const isLoading = ref(true)
 
 const currentTimeMs = ref(0)
+const resumePositionMs = ref(0)
 const linesRef = computed(() => subtitlesStore.lines)
 const { currentLine } = useSubtitleSync(currentTimeMs, linesRef, () => subtitlesStore.fetchNextPage())
 
@@ -31,8 +32,35 @@ const playerRef = ref<InstanceType<typeof YoutubePlayer> | null>(null)
 const activeToken = ref<SubtitleTokenDto | null>(null)
 const activeTokenLine = ref<SubtitleLineDto | null>(null)
 
+const PROGRESS_SAVE_INTERVAL_MS = 5000
+let progressSaveTimer: ReturnType<typeof setTimeout> | null = null
+let lastPersistedPositionMs = 0
+
 function onTimeUpdate(ms: number) {
   currentTimeMs.value = ms
+  if (Math.abs(ms - lastPersistedPositionMs) < 1000 || progressSaveTimer) return
+  progressSaveTimer = setTimeout(() => {
+    progressSaveTimer = null
+    void persistProgress()
+  }, PROGRESS_SAVE_INTERVAL_MS)
+}
+
+function onPlayerReady() {
+  if (resumePositionMs.value > 0) {
+    playerRef.value?.seekTo(resumePositionMs.value)
+  }
+}
+
+async function persistProgress() {
+  const positionMs = currentTimeMs.value
+  if (Math.abs(positionMs - lastPersistedPositionMs) < 1000) return
+  const previousPosition = lastPersistedPositionMs
+  lastPersistedPositionMs = positionMs
+  try {
+    await videoApi.updateProgress(numericVideoId.value, positionMs)
+  } catch {
+    lastPersistedPositionMs = previousPosition
+  }
 }
 
 function onTokenClick(line: SubtitleLineDto, token: SubtitleTokenDto) {
@@ -242,6 +270,8 @@ onMounted(async () => {
     }
     youtubeVideoId.value = summary.youtubeVideoId
     title.value = summary.title
+    resumePositionMs.value = summary.lastPositionMs
+    lastPersistedPositionMs = summary.lastPositionMs
     await subtitlesStore.init(numericVideoId.value, targetLanguage.value)
   } catch (error) {
     loadError.value = toApiError(error).message
@@ -256,6 +286,10 @@ onUnmounted(() => {
   if (linePressTimer) clearTimeout(linePressTimer)
   if (iconPressTimer) clearTimeout(iconPressTimer)
   if (repeatLabelTimeout) clearTimeout(repeatLabelTimeout)
+  if (progressSaveTimer) clearTimeout(progressSaveTimer)
+  if (Math.abs(currentTimeMs.value - lastPersistedPositionMs) >= 1000) {
+    void videoApi.updateProgress(numericVideoId.value, currentTimeMs.value).catch(() => undefined)
+  }
   subtitlesStore.reset()
 })
 </script>
@@ -276,7 +310,7 @@ onUnmounted(() => {
     <div class="watch-stage">
       <div class="video-col">
         <div class="player-frame">
-          <YoutubePlayer ref="playerRef" :video-id="youtubeVideoId" @timeupdate="onTimeUpdate" />
+          <YoutubePlayer ref="playerRef" :video-id="youtubeVideoId" @ready="onPlayerReady" @timeupdate="onTimeUpdate" />
         </div>
       </div>
 

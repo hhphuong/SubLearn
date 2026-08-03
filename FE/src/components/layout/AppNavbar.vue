@@ -23,6 +23,7 @@ async function onLogout() {
       <div class="app-navbar__links">
         <template v-if="authStore.isAuthenticated">
           <RouterLink class="app-navbar__link" to="/">Trang chủ</RouterLink>
+          <RouterLink class="app-navbar__link" to="/library">Thư viện</RouterLink>
           <RouterLink class="app-navbar__link" to="/dictionary">Từ điển</RouterLink>
         </template>
       </div>

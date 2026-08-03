@@ -36,6 +36,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/library',
+      name: 'library',
+      component: () => import('../views/LibraryView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('../views/NotFoundView.vue'),

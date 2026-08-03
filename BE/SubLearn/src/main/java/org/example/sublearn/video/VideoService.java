@@ -31,15 +31,17 @@ public class VideoService {
     private final YouTubeUrlParser youTubeUrlParser;
     private final VideoIngestionService videoIngestionService;
     private final VideoProgressTracker progressTracker;
+    private final VideoLibraryService videoLibraryService;
 
     public VideoService(VideoRepository videoRepository, AppUserRepository appUserRepository,
                          YouTubeUrlParser youTubeUrlParser, VideoIngestionService videoIngestionService,
-                         VideoProgressTracker progressTracker) {
+                         VideoProgressTracker progressTracker, VideoLibraryService videoLibraryService) {
         this.videoRepository = videoRepository;
         this.appUserRepository = appUserRepository;
         this.youTubeUrlParser = youTubeUrlParser;
         this.videoIngestionService = videoIngestionService;
         this.progressTracker = progressTracker;
+        this.videoLibraryService = videoLibraryService;
     }
 
     @Transactional
@@ -49,6 +51,7 @@ public class VideoService {
 
         Video video = videoRepository.findByYoutubeVideoId(youtubeVideoId).orElse(null);
         if (video != null && ACTIVE_STATUSES.contains(video.getStatus())) {
+            videoLibraryService.addToLibrary(userId, video);
             return new VideoSubmitResponse(video.getId(), video.getStatus());
         }
 
@@ -60,6 +63,7 @@ public class VideoService {
             // previous attempt FAILED - reset and retry
             video.setStatus(VideoStatus.PENDING);
         }
+        videoLibraryService.addToLibrary(userId, video);
 
         Long videoId = video.getId();
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -93,10 +97,11 @@ public class VideoService {
     }
 
     @Transactional(readOnly = true)
-    public VideoSummaryResponse getSummary(Long videoId) {
+    public VideoSummaryResponse getSummary(Long videoId, Long userId) {
         Video video = getVideo(videoId);
         return new VideoSummaryResponse(video.getId(), video.getTitle(), video.getSourceLanguage(),
-                video.getDurationSeconds(), video.getStatus(), video.getYoutubeVideoId());
+                video.getDurationSeconds(), video.getStatus(), video.getYoutubeVideoId(),
+                videoLibraryService.getLastPosition(userId, videoId));
     }
 
     Video getVideo(Long videoId) {

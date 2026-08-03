@@ -8,6 +8,7 @@ public record VideoSummaryResponse(
         String sourceLanguage,
         Integer durationSeconds,
         VideoStatus status,
-        String youtubeVideoId
+        String youtubeVideoId,
+        long lastPositionMs
 ) {
 }

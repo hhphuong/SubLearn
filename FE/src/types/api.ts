@@ -66,6 +66,25 @@ export interface VideoSummaryResponse {
   durationSeconds: number | null
   status: VideoStatus
   youtubeVideoId: string | null
+  lastPositionMs: number
+}
+
+export interface VideoLibraryItemResponse {
+  videoId: number
+  youtubeVideoId: string
+  title: string | null
+  sourceLanguage: string | null
+  durationSeconds: number | null
+  lastPositionMs: number
+  addedAt: string
+  lastWatchedAt: string
+}
+
+export interface VideoLibraryPageResponse {
+  page: number
+  size: number
+  totalElements: number
+  videos: VideoLibraryItemResponse[]
 }
 
 export interface SubtitleTokenDto {
