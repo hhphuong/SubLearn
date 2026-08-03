@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
+import AppLogo from '@/components/layout/AppLogo.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -15,7 +16,7 @@ async function onLogout() {
   <nav class="app-navbar">
     <div class="app-navbar__inner">
       <RouterLink class="app-navbar__brand" to="/">
-        <span class="app-navbar__logo">📚</span>
+        <AppLogo :size="30" />
         <span>SubLearn</span>
       </RouterLink>
 
@@ -67,11 +68,6 @@ async function onLogout() {
   font-size: 1.15rem;
   color: var(--brand-ink);
   text-decoration: none;
-}
-
-.app-navbar__logo {
-  font-size: 1.4rem;
-  line-height: 1;
 }
 
 .app-navbar__links {

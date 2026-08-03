@@ -5,6 +5,7 @@ import org.example.sublearn.domain.AppUser;
 import org.example.sublearn.domain.Video;
 import org.example.sublearn.domain.VideoStatus;
 import org.example.sublearn.ingestion.VideoIngestionService;
+import org.example.sublearn.ingestion.VideoProgressTracker;
 import org.example.sublearn.ingestion.YouTubeUrlParser;
 import org.example.sublearn.repository.AppUserRepository;
 import org.example.sublearn.repository.VideoRepository;
@@ -29,13 +30,16 @@ public class VideoService {
     private final AppUserRepository appUserRepository;
     private final YouTubeUrlParser youTubeUrlParser;
     private final VideoIngestionService videoIngestionService;
+    private final VideoProgressTracker progressTracker;
 
     public VideoService(VideoRepository videoRepository, AppUserRepository appUserRepository,
-                         YouTubeUrlParser youTubeUrlParser, VideoIngestionService videoIngestionService) {
+                         YouTubeUrlParser youTubeUrlParser, VideoIngestionService videoIngestionService,
+                         VideoProgressTracker progressTracker) {
         this.videoRepository = videoRepository;
         this.appUserRepository = appUserRepository;
         this.youTubeUrlParser = youTubeUrlParser;
         this.videoIngestionService = videoIngestionService;
+        this.progressTracker = progressTracker;
     }
 
     @Transactional
@@ -74,8 +78,18 @@ public class VideoService {
     @Transactional(readOnly = true)
     public VideoStatusResponse getStatus(Long videoId) {
         Video video = getVideo(videoId);
+        // While actively saving lines, the authoritative processedLines/percent live only in
+        // VideoProgressTracker's in-memory map (see its javadoc) - the video row's own
+        // columns aren't touched again until the whole line-saving transaction commits.
+        Integer processedLines = video.getStatus() == VideoStatus.PROCESSING
+                ? progressTracker.liveProcessedLines(videoId).orElse(video.getProcessedLines())
+                : video.getProcessedLines();
+        int progressPercent = video.getStatus() == VideoStatus.PROCESSING
+                ? progressTracker.liveProgressPercent(videoId).orElse(video.getProgressPercent())
+                : video.getProgressPercent();
         return new VideoStatusResponse(video.getStatus(), video.getFailureReason(), video.getFailureMessage(),
-                video.getTitle(), video.getSourceLanguage(), video.getDurationSeconds(), video.getYoutubeVideoId());
+                video.getTitle(), video.getSourceLanguage(), video.getDurationSeconds(), video.getYoutubeVideoId(),
+                video.getTotalLines(), processedLines, progressPercent);
     }
 
     @Transactional(readOnly = true)

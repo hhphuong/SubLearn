@@ -50,6 +50,15 @@ public class Video {
     @Column(name = "failure_message", length = 1024)
     private String failureMessage;
 
+    @Column(name = "total_lines")
+    private Integer totalLines;
+
+    @Column(name = "processed_lines")
+    private Integer processedLines;
+
+    @Column(name = "progress_percent", nullable = false)
+    private int progressPercent;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "requested_by_user_id")
     private AppUser requestedByUser;
@@ -128,6 +137,42 @@ public class Video {
         this.status = VideoStatus.FAILED;
         this.failureReason = reason;
         this.failureMessage = message;
+    }
+
+    public void markReady() {
+        this.status = VideoStatus.READY;
+        this.failureReason = null;
+        this.failureMessage = null;
+    }
+
+    public Integer getTotalLines() {
+        return totalLines;
+    }
+
+    public void setTotalLines(Integer totalLines) {
+        this.totalLines = totalLines;
+    }
+
+    public Integer getProcessedLines() {
+        return processedLines;
+    }
+
+    public void setProcessedLines(Integer processedLines) {
+        this.processedLines = processedLines;
+    }
+
+    public int getProgressPercent() {
+        return progressPercent;
+    }
+
+    public void setProgressPercent(int progressPercent) {
+        this.progressPercent = Math.max(this.progressPercent, progressPercent);
+    }
+
+    public void resetProgress() {
+        this.totalLines = null;
+        this.processedLines = 0;
+        this.progressPercent = 0;
     }
 
     public AppUser getRequestedByUser() {

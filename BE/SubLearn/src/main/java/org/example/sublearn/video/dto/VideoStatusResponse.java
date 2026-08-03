@@ -10,6 +10,9 @@ public record VideoStatusResponse(
         String title,
         String sourceLanguage,
         Integer durationSeconds,
-        String youtubeVideoId
+        String youtubeVideoId,
+        Integer totalLines,
+        Integer processedLines,
+        Integer progressPercent
 ) {
 }

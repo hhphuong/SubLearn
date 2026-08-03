@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVideoStore } from '@/stores/video.store'
 import { toApiError } from '@/api/errors'
@@ -30,6 +30,21 @@ function onReset() {
   videoStore.reset()
   submitError.value = null
 }
+
+// progressPercent comes straight from the backend, driven by real milestones (yt-dlp's
+// own log output while it fetches, then actual subtitle lines saved) - never a fake timer.
+const progressPercent = computed(() => videoStore.progressPercent ?? 0)
+
+const progressLabel = computed(() => {
+  if (videoStore.totalLines) {
+    return `Đang xử lý phụ đề: ${videoStore.processedLines ?? 0}/${videoStore.totalLines} dòng (${progressPercent.value}%)`
+  }
+  const percent = progressPercent.value
+  if (percent >= 50) return `Đang tải phụ đề từ YouTube... (${percent}%)`
+  if (percent >= 20) return `Đang tải thông tin video... (${percent}%)`
+  if (percent >= 10) return `Đang kết nối tới YouTube... (${percent}%)`
+  return `Đang khởi tạo... (${percent}%)`
+})
 
 watch(
   () => videoStore.status,
@@ -87,9 +102,14 @@ onUnmounted(() => {
 
       <div v-else class="text-center py-4">
         <div v-if="videoStore.status === 'PENDING' || videoStore.status === 'PROCESSING'">
-          <div class="spinner-border mb-3" role="status"></div>
           <p class="fw-semibold mb-1">Đang xử lý video{{ videoStore.title ? `: ${videoStore.title}` : '' }}...</p>
+
+          <div class="progress-track" role="progressbar" :aria-valuenow="progressPercent" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
+          </div>
+          <p class="text-muted small mt-2 mb-0">{{ progressLabel }}</p>
           <p class="text-muted small">Việc này có thể mất một vài phút tùy độ dài video.</p>
+
           <div v-if="videoStore.clientTimedOut" class="alert alert-warning py-2 mt-3">
             Quá trình xử lý đang mất nhiều thời gian hơn dự kiến.
             <button class="btn btn-sm btn-link" type="button" @click="onReset">Hủy và thử lại</button>
@@ -147,8 +167,20 @@ onUnmounted(() => {
   margin: 0 auto;
 }
 
-.spinner-border {
-  color: var(--brand-green);
+.progress-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--brand-green-light);
+  overflow: hidden;
+  margin-top: 1rem;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--brand-green);
+  transition: width 0.4s ease;
 }
 
 @media (max-width: 640px) {

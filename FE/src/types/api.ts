@@ -54,6 +54,9 @@ export interface VideoStatusResponse {
   sourceLanguage: string | null
   durationSeconds: number | null
   youtubeVideoId: string | null
+  totalLines: number | null
+  processedLines: number | null
+  progressPercent: number | null
 }
 
 export interface VideoSummaryResponse {

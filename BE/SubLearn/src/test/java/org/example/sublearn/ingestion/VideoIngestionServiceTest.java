@@ -19,7 +19,8 @@ class VideoIngestionServiceTest {
     void ingestPersistsSubtitlesWhenYtDlpSucceeds() {
         YtDlpClient ytDlpClient = mock(YtDlpClient.class);
         VideoIngestionPersister persister = mock(VideoIngestionPersister.class);
-        VideoIngestionService service = new VideoIngestionService(ytDlpClient, persister);
+        VideoProgressTracker progressTracker = mock(VideoProgressTracker.class);
+        VideoIngestionService service = new VideoIngestionService(ytDlpClient, persister, progressTracker);
 
         String vtt = """
                 WEBVTT
@@ -27,12 +28,14 @@ class VideoIngestionServiceTest {
                 00:00:01.000 --> 00:00:04.000
                 Hello world
                 """;
-        when(ytDlpClient.fetchCaptionsAndMetadata("abc123")).thenReturn(new YtDlpResult("Title", 10, "en", vtt));
+        when(ytDlpClient.fetchCaptionsAndMetadata(1L, "abc123")).thenReturn(new YtDlpResult("Title", 10, "en", vtt));
 
         service.ingest(1L, "abc123");
 
         verify(persister).markProcessing(1L);
-        verify(persister).persistReady(eq(1L), any(YtDlpResult.class), argThat(cues -> cues.size() == 1));
+        verify(progressTracker).beginSaving(1L, "Title", 10, "en", 1);
+        verify(persister).persistLines(eq(1L), eq("en"), argThat(cues -> cues.size() == 1));
+        verify(persister).markReady(1L);
         verify(persister, never()).markFailed(anyLong(), any(), any());
     }
 
@@ -40,9 +43,10 @@ class VideoIngestionServiceTest {
     void ingestMarksFailedWithoutThrowingWhenNoCaptionsAreAvailable() {
         YtDlpClient ytDlpClient = mock(YtDlpClient.class);
         VideoIngestionPersister persister = mock(VideoIngestionPersister.class);
-        VideoIngestionService service = new VideoIngestionService(ytDlpClient, persister);
+        VideoProgressTracker progressTracker = mock(VideoProgressTracker.class);
+        VideoIngestionService service = new VideoIngestionService(ytDlpClient, persister, progressTracker);
 
-        when(ytDlpClient.fetchCaptionsAndMetadata("abc123"))
+        when(ytDlpClient.fetchCaptionsAndMetadata(1L, "abc123"))
                 .thenThrow(new YtDlpProcessException(FailureReason.NO_CAPTIONS_AVAILABLE, "no captions found"));
 
         assertDoesNotThrow(() -> service.ingest(1L, "abc123"));
@@ -55,9 +59,10 @@ class VideoIngestionServiceTest {
     void ingestMapsUnexpectedExceptionsToUnknownErrorWithoutThrowing() {
         YtDlpClient ytDlpClient = mock(YtDlpClient.class);
         VideoIngestionPersister persister = mock(VideoIngestionPersister.class);
-        VideoIngestionService service = new VideoIngestionService(ytDlpClient, persister);
+        VideoProgressTracker progressTracker = mock(VideoProgressTracker.class);
+        VideoIngestionService service = new VideoIngestionService(ytDlpClient, persister, progressTracker);
 
-        when(ytDlpClient.fetchCaptionsAndMetadata("abc123")).thenThrow(new RuntimeException("boom"));
+        when(ytDlpClient.fetchCaptionsAndMetadata(1L, "abc123")).thenThrow(new RuntimeException("boom"));
 
         assertDoesNotThrow(() -> service.ingest(1L, "abc123"));
 

@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { videoApi } from '@/api/video.api'
 import type { FailureReason, VideoStatus } from '@/types/api'
 
-const POLL_INTERVAL_MS = 3000
+const POLL_INTERVAL_MS = 1500
 const MAX_POLL_DURATION_MS = 5 * 60 * 1000
 
 export const useVideoStore = defineStore('video', () => {
@@ -15,6 +15,9 @@ export const useVideoStore = defineStore('video', () => {
   const sourceLanguage = ref<string | null>(null)
   const durationSeconds = ref<number | null>(null)
   const youtubeVideoId = ref<string | null>(null)
+  const totalLines = ref<number | null>(null)
+  const processedLines = ref<number | null>(null)
+  const progressPercent = ref<number | null>(null)
   const isPolling = ref(false)
   const clientTimedOut = ref(false)
 
@@ -29,6 +32,9 @@ export const useVideoStore = defineStore('video', () => {
     sourceLanguage: string | null
     durationSeconds: number | null
     youtubeVideoId: string | null
+    totalLines: number | null
+    processedLines: number | null
+    progressPercent: number | null
   }) {
     status.value = response.status
     failureReason.value = response.failureReason
@@ -37,6 +43,9 @@ export const useVideoStore = defineStore('video', () => {
     sourceLanguage.value = response.sourceLanguage
     durationSeconds.value = response.durationSeconds
     youtubeVideoId.value = response.youtubeVideoId
+    totalLines.value = response.totalLines
+    processedLines.value = response.processedLines
+    progressPercent.value = response.progressPercent
   }
 
   async function fetchStatus(id: number) {
@@ -102,6 +111,9 @@ export const useVideoStore = defineStore('video', () => {
     sourceLanguage.value = null
     durationSeconds.value = null
     youtubeVideoId.value = null
+    totalLines.value = null
+    processedLines.value = null
+    progressPercent.value = null
     clientTimedOut.value = false
   }
 
@@ -114,6 +126,9 @@ export const useVideoStore = defineStore('video', () => {
     sourceLanguage,
     durationSeconds,
     youtubeVideoId,
+    totalLines,
+    processedLines,
+    progressPercent,
     isPolling,
     clientTimedOut,
     submit,

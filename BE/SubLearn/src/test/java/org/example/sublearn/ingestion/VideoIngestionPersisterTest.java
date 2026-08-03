@@ -40,18 +40,18 @@ class VideoIngestionPersisterTest {
         subtitleTokenRepository = mock(SubtitleTokenRepository.class);
         TokenizerFactory tokenizerFactory = new TokenizerFactory(
                 new OpenNlpTokenizer(), new KuromojiTokenizer(), new WhitespaceFallbackTokenizer());
-        persister = new VideoIngestionPersister(videoRepository, subtitleLineRepository, subtitleTokenRepository, tokenizerFactory);
+        VideoProgressTracker progressTracker = mock(VideoProgressTracker.class);
+        persister = new VideoIngestionPersister(videoRepository, subtitleLineRepository, subtitleTokenRepository, tokenizerFactory, progressTracker);
 
         video = new Video("dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", null);
         when(videoRepository.findById(1L)).thenReturn(Optional.of(video));
     }
 
     @Test
-    void persistsSubtitleLinesAndTokensAndMarksVideoReady() {
+    void persistsSubtitleLinesAndTokens() {
         List<VttCue> cues = List.of(new VttCue(1000, 4000, "Hello world"));
-        YtDlpResult result = new YtDlpResult("Title", 120, "en", "unused-raw-vtt");
 
-        persister.persistReady(1L, result, cues);
+        persister.persistLines(1L, "en", cues);
 
         ArgumentCaptor<SubtitleLine> lineCaptor = ArgumentCaptor.forClass(SubtitleLine.class);
         verify(subtitleLineRepository).save(lineCaptor.capture());
@@ -67,10 +67,12 @@ class VideoIngestionPersisterTest {
         assertEquals(List.of("Hello", "world"), surfaces);
         List<String> normalized = tokenCaptor.getAllValues().stream().map(SubtitleToken::getNormalizedText).toList();
         assertEquals(List.of("hello", "world"), normalized);
+    }
 
+    @Test
+    void markReadySetsStatusToReady() {
+        persister.markReady(1L);
         assertEquals(VideoStatus.READY, video.getStatus());
-        assertEquals("Title", video.getTitle());
-        assertEquals("en", video.getSourceLanguage());
     }
 
     @Test

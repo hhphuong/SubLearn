@@ -16,19 +16,24 @@ public class VideoIngestionService {
 
     private final YtDlpClient ytDlpClient;
     private final VideoIngestionPersister persister;
+    private final VideoProgressTracker progressTracker;
 
-    public VideoIngestionService(YtDlpClient ytDlpClient, VideoIngestionPersister persister) {
+    public VideoIngestionService(YtDlpClient ytDlpClient, VideoIngestionPersister persister,
+                                  VideoProgressTracker progressTracker) {
         this.ytDlpClient = ytDlpClient;
         this.persister = persister;
+        this.progressTracker = progressTracker;
     }
 
     @Async("ingestionTaskExecutor")
     public void ingest(Long videoId, String youtubeVideoId) {
         persister.markProcessing(videoId);
         try {
-            YtDlpResult result = ytDlpClient.fetchCaptionsAndMetadata(youtubeVideoId);
+            YtDlpResult result = ytDlpClient.fetchCaptionsAndMetadata(videoId, youtubeVideoId);
             List<VttCue> cues = VttParser.parse(result.vttContent());
-            persister.persistReady(videoId, result, cues);
+            progressTracker.beginSaving(videoId, result.title(), result.durationSeconds(), result.sourceLanguage(), cues.size());
+            persister.persistLines(videoId, result.sourceLanguage(), cues);
+            persister.markReady(videoId);
         } catch (YtDlpProcessException e) {
             log.info("Ingestion failed for video {}: {}", videoId, e.getMessage());
             persister.markFailed(videoId, e.getFailureReason(), e.getMessage());

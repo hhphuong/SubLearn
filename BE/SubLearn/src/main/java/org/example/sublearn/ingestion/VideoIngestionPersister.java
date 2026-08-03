@@ -27,33 +27,45 @@ import java.util.Locale;
 @Service
 public class VideoIngestionPersister {
 
+    private static final int PROGRESS_UPDATE_INTERVAL = 5;
+
     private final VideoRepository videoRepository;
     private final SubtitleLineRepository subtitleLineRepository;
     private final SubtitleTokenRepository subtitleTokenRepository;
     private final TokenizerFactory tokenizerFactory;
+    private final VideoProgressTracker progressTracker;
 
     public VideoIngestionPersister(VideoRepository videoRepository, SubtitleLineRepository subtitleLineRepository,
-                                    SubtitleTokenRepository subtitleTokenRepository, TokenizerFactory tokenizerFactory) {
+                                    SubtitleTokenRepository subtitleTokenRepository, TokenizerFactory tokenizerFactory,
+                                    VideoProgressTracker progressTracker) {
         this.videoRepository = videoRepository;
         this.subtitleLineRepository = subtitleLineRepository;
         this.subtitleTokenRepository = subtitleTokenRepository;
         this.tokenizerFactory = tokenizerFactory;
+        this.progressTracker = progressTracker;
     }
 
     @Transactional
     public void markProcessing(Long videoId) {
-        getVideo(videoId).setStatus(VideoStatus.PROCESSING);
+        Video video = getVideo(videoId);
+        video.setStatus(VideoStatus.PROCESSING);
+        video.resetProgress();
+        progressTracker.clear(videoId);
     }
 
+    /**
+     * Persists subtitle lines/tokens only. {@code subtitle_line.video_id} is a foreign key,
+     * so every insert here takes an implicit InnoDB shared lock on the referenced
+     * {@code video} row for the lifetime of this transaction - see
+     * {@link VideoProgressTracker}'s javadoc for why per-line progress is tracked in memory
+     * instead of written to that row from inside this loop.
+     */
     @Transactional
-    public void persistReady(Long videoId, YtDlpResult result, List<VttCue> cues) {
+    public void persistLines(Long videoId, String sourceLanguage, List<VttCue> cues) {
         Video video = getVideo(videoId);
-        video.setTitle(result.title());
-        video.setDurationSeconds(result.durationSeconds());
-        video.setSourceLanguage(result.sourceLanguage());
-
-        Tokenizer tokenizer = tokenizerFactory.get(result.sourceLanguage());
+        Tokenizer tokenizer = tokenizerFactory.get(sourceLanguage);
         int sequence = 0;
+        int processed = 0;
         for (VttCue cue : cues) {
             SubtitleLine line = new SubtitleLine(video, sequence++, cue.startMs(), cue.endMs(), cue.text());
             subtitleLineRepository.save(line);
@@ -66,13 +78,24 @@ public class VideoIngestionPersister {
                         span.tokenType(), span.partOfSpeech());
                 subtitleTokenRepository.save(token);
             }
+
+            processed++;
+            if (processed % PROGRESS_UPDATE_INTERVAL == 0 || processed == cues.size()) {
+                progressTracker.updateProcessedLines(videoId, processed, cues.size());
+            }
         }
-        video.setStatus(VideoStatus.READY);
+    }
+
+    @Transactional
+    public void markReady(Long videoId) {
+        getVideo(videoId).markReady();
+        progressTracker.clear(videoId);
     }
 
     @Transactional
     public void markFailed(Long videoId, FailureReason reason, String message) {
         getVideo(videoId).markFailed(reason, message);
+        progressTracker.clear(videoId);
     }
 
     private Video getVideo(Long videoId) {
