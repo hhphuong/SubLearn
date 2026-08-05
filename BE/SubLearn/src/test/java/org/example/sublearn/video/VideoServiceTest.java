@@ -25,6 +25,8 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -37,6 +39,7 @@ class VideoServiceTest {
     private VideoRepository videoRepository;
     private AppUserRepository appUserRepository;
     private VideoWatchHistoryRepository videoWatchHistoryRepository;
+    private VideoLibraryService videoLibraryService;
     private VideoIngestionService videoIngestionService;
     private VideoService service;
     private AppUser user;
@@ -47,11 +50,12 @@ class VideoServiceTest {
         videoRepository = mock(VideoRepository.class);
         appUserRepository = mock(AppUserRepository.class);
         videoWatchHistoryRepository = mock(VideoWatchHistoryRepository.class);
+        videoLibraryService = mock(VideoLibraryService.class);
         YouTubeUrlParser youTubeUrlParser = mock(YouTubeUrlParser.class);
         videoIngestionService = mock(VideoIngestionService.class);
         VideoProgressTracker progressTracker = mock(VideoProgressTracker.class);
         service = new VideoService(videoRepository, appUserRepository, youTubeUrlParser, videoIngestionService,
-                progressTracker, videoWatchHistoryRepository);
+                progressTracker, videoWatchHistoryRepository, videoLibraryService);
 
         user = new AppUser("learner@example.com", "hash", "Learner");
         when(appUserRepository.getReferenceById(1L)).thenReturn(user);
@@ -138,5 +142,36 @@ class VideoServiceTest {
 
         VideoHistoryPageResponse beyondEnd = service.getHistory(1L, 10, 12);
         assertEquals(0, beyondEnd.entries().size());
+    }
+
+    @Test
+    void cachedReadyVideoIsAddedToNewUsersLibraryWithoutRunningIngestionAgain() {
+        VideoRepository videoRepository = mock(VideoRepository.class);
+        AppUserRepository appUserRepository = mock(AppUserRepository.class);
+        YouTubeUrlParser urlParser = mock(YouTubeUrlParser.class);
+        VideoIngestionService ingestionService = mock(VideoIngestionService.class);
+        VideoProgressTracker progressTracker = mock(VideoProgressTracker.class);
+        VideoWatchHistoryRepository watchHistoryRepository = mock(VideoWatchHistoryRepository.class);
+        VideoLibraryService libraryService = mock(VideoLibraryService.class);
+        VideoService service = new VideoService(videoRepository, appUserRepository, urlParser,
+                ingestionService, progressTracker, watchHistoryRepository, libraryService);
+
+        AppUser originalUser = new AppUser("first@example.com", "hash", "First");
+        Video cachedVideo = new Video("5MuIMqhT8DM", "https://youtu.be/5MuIMqhT8DM", originalUser);
+        ReflectionTestUtils.setField(cachedVideo, "id", 42L);
+        cachedVideo.setStatus(VideoStatus.READY);
+
+        when(urlParser.extractVideoId("https://youtu.be/5MuIMqhT8DM"))
+                .thenReturn(Optional.of("5MuIMqhT8DM"));
+        when(videoRepository.findByYoutubeVideoId("5MuIMqhT8DM"))
+                .thenReturn(Optional.of(cachedVideo));
+
+        VideoSubmitResponse response = service.submitVideo(
+                "https://youtu.be/5MuIMqhT8DM", "en", 99L);
+
+        assertEquals(42L, response.videoId());
+        assertEquals(VideoStatus.READY, response.status());
+        verify(libraryService).addToLibrary(99L, cachedVideo);
+        verify(ingestionService, never()).ingest(anyLong(), anyString(), anyString());
     }
 }

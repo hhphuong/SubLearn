@@ -1,4 +1,4 @@
-import { defineComponent } from 'vue'
+import { defineComponent, onMounted } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -8,6 +8,7 @@ vi.mock('../FE/src/api/video.api', () => ({
   videoApi: {
     getSummary: vi.fn(),
     recordWatch: vi.fn(),
+    updateProgress: vi.fn(),
   },
 }))
 vi.mock('../FE/src/api/subtitle.api', () => ({
@@ -18,16 +19,19 @@ import { videoApi } from '../FE/src/api/video.api'
 import { subtitleApi } from '../FE/src/api/subtitle.api'
 
 const seekToSpy = vi.fn()
+// Emits 'ready' as soon as it mounts, mirroring the real YoutubePlayer's own `ready` event
+// (see YoutubePlayer.vue's `watch(isReady, ...)`) that WatchView's onPlayerReady listens for.
 const YoutubePlayerStub = defineComponent({
   props: ['videoId'],
   emits: ['ready', 'timeupdate'],
-  setup(_, { expose }) {
+  setup(_, { expose, emit }) {
     expose({ play: vi.fn(), pause: vi.fn(), seekTo: seekToSpy })
+    onMounted(() => emit('ready'))
     return () => null
   },
 })
 
-function mountView(initialState: Record<string, unknown> = {}) {
+function mountView() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -40,7 +44,7 @@ function mountView(initialState: Record<string, unknown> = {}) {
   return mount(WatchView, {
     props: { videoId: '13' },
     global: {
-      plugins: [createTestingPinia({ createSpy: vi.fn, stubActions: false, initialState }), router],
+      plugins: [createTestingPinia({ createSpy: vi.fn, stubActions: false }), router],
       stubs: { YoutubePlayer: YoutubePlayerStub },
     },
   })
@@ -49,15 +53,8 @@ function mountView(initialState: Record<string, unknown> = {}) {
 describe('WatchView resume-to-exact-position', () => {
   beforeEach(() => {
     seekToSpy.mockClear()
-    vi.mocked(videoApi.getSummary).mockResolvedValue({
-      videoId: 13,
-      title: 'Culture shock podcast',
-      sourceLanguage: 'en',
-      durationSeconds: 500,
-      status: 'READY',
-      youtubeVideoId: 'cs4AREZXkgE',
-    })
     vi.mocked(videoApi.recordWatch).mockResolvedValue(undefined)
+    vi.mocked(videoApi.updateProgress).mockResolvedValue(undefined)
     vi.mocked(subtitleApi.getSubtitles).mockResolvedValue({
       page: 0,
       size: 50,
@@ -70,12 +67,23 @@ describe('WatchView resume-to-exact-position', () => {
     })
   })
 
-  it('seeks to the resumed position once the player actually mounts', async () => {
+  function mockSummary(lastPositionMs: number) {
+    vi.mocked(videoApi.getSummary).mockResolvedValue({
+      videoId: 13,
+      title: 'Culture shock podcast',
+      sourceLanguage: 'en',
+      durationSeconds: 500,
+      status: 'READY',
+      youtubeVideoId: 'cs4AREZXkgE',
+      lastPositionMs,
+    })
+  }
+
+  it('seeks to the resumed position once the player actually mounts and fires ready', async () => {
     // Regression test: the player used to stay unmounted (isLoading never flipped to false
     // before the seek attempt), so playerRef was always null and the seek silently no-op'd.
-    const wrapper = mountView({
-      watchSession: { videoId: 13, title: null, targetLanguage: 'vi', lastPlaybackTimeMs: 45000 },
-    })
+    mockSummary(45000)
+    const wrapper = mountView()
     await flushPromises()
     await flushPromises()
 
@@ -83,10 +91,9 @@ describe('WatchView resume-to-exact-position', () => {
     expect(seekToSpy).toHaveBeenCalledWith(45000)
   })
 
-  it('does not attempt a seek when there is no prior session for this video', async () => {
-    const wrapper = mountView({
-      watchSession: { videoId: null, title: null, targetLanguage: null, lastPlaybackTimeMs: 0 },
-    })
+  it('does not attempt a seek when the server has no prior position for this video', async () => {
+    mockSummary(0)
+    const wrapper = mountView()
     await flushPromises()
     await flushPromises()
 
@@ -94,14 +101,22 @@ describe('WatchView resume-to-exact-position', () => {
     expect(seekToSpy).not.toHaveBeenCalled()
   })
 
-  it('ignores a stale playback time left over from watching a different video', async () => {
-    const wrapper = mountView({
-      watchSession: { videoId: 99, title: null, targetLanguage: 'vi', lastPlaybackTimeMs: 45000 },
-    })
+  it('always resumes from whatever position the server reports for this video, not a leftover client value', async () => {
+    // The resume position now comes fresh from getSummary (per videoId, server-side) on every
+    // mount rather than a client-cached value, so there's no longer a way for a stale position
+    // from a different video to bleed in - this confirms a second, updated fetch is honored.
+    mockSummary(12000)
+    const wrapper = mountView()
     await flushPromises()
     await flushPromises()
+    expect(seekToSpy).toHaveBeenCalledWith(12000)
 
-    expect(wrapper.findComponent(YoutubePlayerStub).exists()).toBe(true)
-    expect(seekToSpy).not.toHaveBeenCalled()
+    seekToSpy.mockClear()
+    mockSummary(98000)
+    wrapper.unmount()
+    mountView()
+    await flushPromises()
+    await flushPromises()
+    expect(seekToSpy).toHaveBeenCalledWith(98000)
   })
 })

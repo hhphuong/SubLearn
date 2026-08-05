@@ -91,6 +91,7 @@ onUnmounted(() => {
 
 <template>
   <div class="home">
+    <span class="visually-hidden">SubLearn</span>
     <button v-if="watchSessionStore.videoId !== null" type="button" class="resume-banner" @click="resumeWatching">
       <span class="resume-banner__icon">▶</span>
       <span class="resume-banner__text">

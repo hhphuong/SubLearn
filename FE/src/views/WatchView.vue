@@ -28,6 +28,7 @@ const loadError = ref<string | null>(null)
 const isLoading = ref(true)
 
 const currentTimeMs = ref(0)
+const resumePositionMs = ref(0)
 const linesRef = computed(() => subtitlesStore.lines)
 const { currentLine } = useSubtitleSync(currentTimeMs, linesRef, () => subtitlesStore.fetchNextPage())
 
@@ -35,9 +36,39 @@ const playerRef = ref<InstanceType<typeof YoutubePlayer> | null>(null)
 const activeToken = ref<SubtitleTokenDto | null>(null)
 const activeTokenLine = ref<SubtitleLineDto | null>(null)
 
+const PROGRESS_SAVE_INTERVAL_MS = 5000
+let progressSaveTimer: ReturnType<typeof setTimeout> | null = null
+let lastPersistedPositionMs = 0
+
 function onTimeUpdate(ms: number) {
   currentTimeMs.value = ms
   watchSessionStore.updatePlaybackTime(ms)
+  if (Math.abs(ms - lastPersistedPositionMs) < 1000 || progressSaveTimer) return
+  progressSaveTimer = setTimeout(() => {
+    progressSaveTimer = null
+    void persistProgress()
+  }, PROGRESS_SAVE_INTERVAL_MS)
+}
+
+// Fires from the real YouTube iframe's own ready signal (see YoutubePlayer's `ready` emit) -
+// more reliable than guessing with a nextTick after mount, since it fires exactly when a seek
+// is actually safe to issue rather than merely "the component's been created."
+function onPlayerReady() {
+  if (resumePositionMs.value > 0) {
+    playerRef.value?.seekTo(resumePositionMs.value)
+  }
+}
+
+async function persistProgress() {
+  const positionMs = currentTimeMs.value
+  if (Math.abs(positionMs - lastPersistedPositionMs) < 1000) return
+  const previousPosition = lastPersistedPositionMs
+  lastPersistedPositionMs = positionMs
+  try {
+    await videoApi.updateProgress(numericVideoId.value, positionMs)
+  } catch {
+    lastPersistedPositionMs = previousPosition
+  }
 }
 
 function onTokenClick(line: SubtitleLineDto, token: SubtitleTokenDto) {
@@ -271,23 +302,17 @@ onMounted(async () => {
     // Fire-and-forget: recently-watched history is a nice-to-have, never worth failing or
     // delaying the actual watch experience over.
     void videoApi.recordWatch(numericVideoId.value).catch(() => {})
-
-    // Read this BEFORE setActive (which resets it to 0) - only reuse it when it's a resume
-    // of the SAME video the session was last tracking, never a stale time from another one.
-    const resumeMs = watchSessionStore.videoId === numericVideoId.value ? watchSessionStore.lastPlaybackTimeMs : 0
     watchSessionStore.setActive(numericVideoId.value, summary.title, targetLanguage.value)
 
+    resumePositionMs.value = summary.lastPositionMs
+    lastPersistedPositionMs = summary.lastPositionMs
     await subtitlesStore.init(numericVideoId.value, targetLanguage.value)
 
-    // Must flip this before attempting the seek below: <YoutubePlayer> is gated behind
+    // Must flip this before onPlayerReady can ever fire: <YoutubePlayer> is gated behind
     // `v-else-if="youtubeVideoId"`, which never renders while `isLoading` is still true (the
-    // `v-if="isLoading"` branch wins first) - so playerRef would still be null here otherwise
-    // and the resume seek would silently no-op every time.
+    // `v-if="isLoading"` branch wins first) - so the real YouTube iframe (and the `ready`
+    // event onPlayerReady listens for to issue the resume seek) would never even get created.
     isLoading.value = false
-    if (resumeMs > 0) {
-      await nextTick()
-      playerRef.value?.seekTo(resumeMs)
-    }
   } catch (error) {
     loadError.value = toApiError(error).message
   } finally {
@@ -301,6 +326,10 @@ onUnmounted(() => {
   if (linePressTimer) clearTimeout(linePressTimer)
   if (iconPressTimer) clearTimeout(iconPressTimer)
   if (repeatLabelTimeout) clearTimeout(repeatLabelTimeout)
+  if (progressSaveTimer) clearTimeout(progressSaveTimer)
+  if (Math.abs(currentTimeMs.value - lastPersistedPositionMs) >= 1000) {
+    void videoApi.updateProgress(numericVideoId.value, currentTimeMs.value).catch(() => undefined)
+  }
   subtitlesStore.reset()
 })
 </script>
@@ -321,7 +350,7 @@ onUnmounted(() => {
     <div class="watch-stage">
       <div class="video-col">
         <div class="player-frame">
-          <YoutubePlayer ref="playerRef" :video-id="youtubeVideoId" @timeupdate="onTimeUpdate" />
+          <YoutubePlayer ref="playerRef" :video-id="youtubeVideoId" @ready="onPlayerReady" @timeupdate="onTimeUpdate" />
         </div>
       </div>
 

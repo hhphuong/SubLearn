@@ -1,6 +1,7 @@
 import http from '@/api/http'
 import type {
   VideoHistoryPageResponse,
+  VideoLibraryPageResponse,
   VideoStatusResponse,
   VideoSubmitResponse,
   VideoSummaryResponse,
@@ -24,5 +25,13 @@ export const videoApi = {
   },
   reprocess(videoId: number) {
     return http.post<VideoSubmitResponse>(`/api/videos/${videoId}/reprocess`).then((r) => r.data)
+  },
+  getLibrary(page = 0, size = 20) {
+    return http
+      .get<VideoLibraryPageResponse>('/api/videos/library', { params: { page, size } })
+      .then((r) => r.data)
+  },
+  updateProgress(videoId: number, positionMs: number) {
+    return http.put<void>(`/api/videos/${videoId}/progress`, { positionMs })
   },
 }

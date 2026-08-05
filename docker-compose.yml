@@ -29,10 +29,20 @@ services:
       DB_PASSWORD: sublearn
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
       YTDLP_PATH: yt-dlp
+      YTDLP_COOKIES_PATH: /tmp/youtube-cookies.txt
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env - see .env.example}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    volumes:
+      - ./secrets/youtube-cookies.txt:/run/secrets/youtube-cookies-source.txt:ro
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        cp /run/secrets/youtube-cookies-source.txt /tmp/youtube-cookies.txt
+        && chmod 600 /tmp/youtube-cookies.txt
+        && exec java -jar app.jar
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-8080}:8080"
     depends_on:
       mysql:
         condition: service_healthy
