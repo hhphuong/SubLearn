@@ -11,4 +11,6 @@ public interface SubtitleLineRepository extends JpaRepository<SubtitleLine, Long
     Page<SubtitleLine> findByVideoOrderBySequenceAsc(Video video, Pageable pageable);
 
     long countByVideo(Video video);
+
+    void deleteByVideo(Video video);
 }

@@ -3,6 +3,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { videoApi } from '@/api/video.api'
 import { useSubtitlesStore } from '@/stores/subtitles.store'
+import { useVideoStore } from '@/stores/video.store'
+import { useWatchSessionStore } from '@/stores/watchSession.store'
 import { useSubtitleSync } from '@/composables/useSubtitleSync'
 import YoutubePlayer from '@/components/watch/YoutubePlayer.vue'
 import SubtitleLine from '@/components/watch/SubtitleLine.vue'
@@ -14,6 +16,8 @@ const props = defineProps<{ videoId: string }>()
 const route = useRoute()
 const router = useRouter()
 const subtitlesStore = useSubtitlesStore()
+const videoStore = useVideoStore()
+const watchSessionStore = useWatchSessionStore()
 
 const numericVideoId = computed(() => Number(props.videoId))
 const targetLanguage = computed(() => (typeof route.query.lang === 'string' ? route.query.lang : 'en'))
@@ -33,6 +37,7 @@ const activeTokenLine = ref<SubtitleLineDto | null>(null)
 
 function onTimeUpdate(ms: number) {
   currentTimeMs.value = ms
+  watchSessionStore.updatePlaybackTime(ms)
 }
 
 function onTokenClick(line: SubtitleLineDto, token: SubtitleTokenDto) {
@@ -222,6 +227,27 @@ async function onDownload(mode: 'original' | 'translation' | 'bilingual') {
   }
 }
 
+// --- Reprocess: re-runs subtitle ingestion for this video so it picks up parser/chunking
+// fixes shipped after it was originally ingested (ingestion only ever runs once otherwise).
+// Reuses videoStore's existing polling + HomeView's redirect-on-READY, same as a fresh submit. ---
+const isReprocessing = ref(false)
+const reprocessError = ref<string | null>(null)
+
+async function onReprocess() {
+  if (!window.confirm('Xử lý lại phụ đề cho video này bằng thuật toán mới nhất? Bạn sẽ được chuyển về trang chủ để theo dõi tiến trình.')) {
+    return
+  }
+  reprocessError.value = null
+  isReprocessing.value = true
+  try {
+    await videoStore.reprocess(numericVideoId.value)
+    router.push({ name: 'home' })
+  } catch (error) {
+    reprocessError.value = toApiError(error).message
+    isReprocessing.value = false
+  }
+}
+
 function onDocumentClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null
   if (isDownloadMenuOpen.value && target && !target.closest('.download-menu')) {
@@ -242,7 +268,26 @@ onMounted(async () => {
     }
     youtubeVideoId.value = summary.youtubeVideoId
     title.value = summary.title
+    // Fire-and-forget: recently-watched history is a nice-to-have, never worth failing or
+    // delaying the actual watch experience over.
+    void videoApi.recordWatch(numericVideoId.value).catch(() => {})
+
+    // Read this BEFORE setActive (which resets it to 0) - only reuse it when it's a resume
+    // of the SAME video the session was last tracking, never a stale time from another one.
+    const resumeMs = watchSessionStore.videoId === numericVideoId.value ? watchSessionStore.lastPlaybackTimeMs : 0
+    watchSessionStore.setActive(numericVideoId.value, summary.title, targetLanguage.value)
+
     await subtitlesStore.init(numericVideoId.value, targetLanguage.value)
+
+    // Must flip this before attempting the seek below: <YoutubePlayer> is gated behind
+    // `v-else-if="youtubeVideoId"`, which never renders while `isLoading` is still true (the
+    // `v-if="isLoading"` branch wins first) - so playerRef would still be null here otherwise
+    // and the resume seek would silently no-op every time.
+    isLoading.value = false
+    if (resumeMs > 0) {
+      await nextTick()
+      playerRef.value?.seekTo(resumeMs)
+    }
   } catch (error) {
     loadError.value = toApiError(error).message
   } finally {
@@ -322,7 +367,19 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
+
+            <button
+              class="btn btn-outline-secondary btn-sm"
+              type="button"
+              :disabled="isReprocessing"
+              title="Cắt lại phụ đề bằng thuật toán mới nhất (dùng khi phụ đề bị mất dấu câu hoặc cắt dòng chưa hợp lý)"
+              @click="onReprocess"
+            >
+              {{ isReprocessing ? 'Đang gửi yêu cầu...' : '⟳ Xử lý lại phụ đề' }}
+            </button>
           </div>
+
+          <div v-if="reprocessError" class="alert alert-danger py-1 px-2 small mx-2 mb-0">{{ reprocessError }}</div>
 
           <div v-if="showTranslation && subtitlesStore.translationUnavailable" class="translation-warning">
             ⚠ Dịch vụ dịch tạm thời không khả dụng (có thể do vượt giới hạn sử dụng). Đang hiển thị tạm bản gốc thay cho bản dịch.
@@ -428,6 +485,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0.75rem 0.75rem 0;
 }

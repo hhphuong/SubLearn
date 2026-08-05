@@ -1,6 +1,7 @@
 package org.example.sublearn.video;
 
 import jakarta.validation.Valid;
+import org.example.sublearn.video.dto.VideoHistoryPageResponse;
 import org.example.sublearn.video.dto.VideoStatusResponse;
 import org.example.sublearn.video.dto.VideoSubmitRequest;
 import org.example.sublearn.video.dto.VideoSubmitResponse;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,6 +33,15 @@ public class VideoController {
         return videoService.submitVideo(request.youtubeUrl(), request.sourceLanguage(), userId);
     }
 
+    // Registered before "/{videoId}" so this literal path always wins over the path-variable
+    // pattern for the same segment position.
+    @GetMapping("/history")
+    public VideoHistoryPageResponse history(@AuthenticationPrincipal Long userId,
+                                             @RequestParam(defaultValue = "0") int page,
+                                             @RequestParam(defaultValue = "12") int size) {
+        return videoService.getHistory(userId, page, size);
+    }
+
     @GetMapping("/{videoId}/status")
     public VideoStatusResponse status(@PathVariable Long videoId) {
         return videoService.getStatus(videoId);
@@ -39,5 +50,17 @@ public class VideoController {
     @GetMapping("/{videoId}")
     public VideoSummaryResponse summary(@PathVariable Long videoId) {
         return videoService.getSummary(videoId);
+    }
+
+    @PostMapping("/{videoId}/watch")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void recordWatch(@PathVariable Long videoId, @AuthenticationPrincipal Long userId) {
+        videoService.recordWatch(videoId, userId);
+    }
+
+    @PostMapping("/{videoId}/reprocess")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public VideoSubmitResponse reprocess(@PathVariable Long videoId) {
+        return videoService.reprocess(videoId);
     }
 }

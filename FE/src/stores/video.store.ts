@@ -92,13 +92,24 @@ export const useVideoStore = defineStore('video', () => {
   async function submit(youtubeUrl: string, sourceLanguage: string) {
     reset()
     const response = await videoApi.submit(youtubeUrl, sourceLanguage)
-    videoId.value = response.videoId
-    status.value = response.status
-    if (response.status === 'READY' || response.status === 'FAILED') {
-      await fetchStatus(response.videoId)
+    trackSubmission(response.videoId, response.status)
+  }
+
+  /** Shared by both a brand-new submission and re-tracking an existing video's reprocess run. */
+  function trackSubmission(id: number, initialStatus: VideoStatus) {
+    videoId.value = id
+    status.value = initialStatus
+    if (initialStatus === 'READY' || initialStatus === 'FAILED') {
+      void fetchStatus(id)
     } else {
-      startPolling(response.videoId)
+      startPolling(id)
     }
+  }
+
+  async function reprocess(id: number) {
+    reset()
+    const response = await videoApi.reprocess(id)
+    trackSubmission(response.videoId, response.status)
   }
 
   function reset() {
@@ -132,6 +143,7 @@ export const useVideoStore = defineStore('video', () => {
     isPolling,
     clientTimedOut,
     submit,
+    reprocess,
     fetchStatus,
     startPolling,
     stopPolling,

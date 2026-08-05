@@ -42,6 +42,10 @@ public class DictionaryEntry {
     @Column(name = "target_language", nullable = false, length = 10)
     private String targetLanguage;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "folder_id")
+    private DictionaryFolder folder;
+
     @Column(name = "display_word", nullable = false)
     private String displayWord;
 
@@ -94,6 +98,10 @@ public class DictionaryEntry {
         contexts.add(context);
     }
 
+    public void moveToFolder(DictionaryFolder folder) {
+        this.folder = folder;
+    }
+
     public Long getId() {
         return id;
     }
@@ -112,6 +120,10 @@ public class DictionaryEntry {
 
     public String getTargetLanguage() {
         return targetLanguage;
+    }
+
+    public DictionaryFolder getFolder() {
+        return folder;
     }
 
     public String getDisplayWord() {

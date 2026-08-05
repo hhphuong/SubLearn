@@ -30,6 +30,7 @@ public class YtDlpErrorClassifier {
             return FailureReason.VIDEO_REGION_LOCKED;
         }
         if (lower.contains("video unavailable") || lower.contains("this video is unavailable")
+                || lower.contains("this video is no longer available") || lower.contains("this video is not available")
                 || lower.contains("has been removed")) {
             return FailureReason.VIDEO_UNAVAILABLE;
         }

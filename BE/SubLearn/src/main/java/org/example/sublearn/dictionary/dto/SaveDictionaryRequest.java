@@ -14,6 +14,7 @@ public record SaveDictionaryRequest(
         List<String> examples,
         @NotNull Long videoId,
         Long subtitleLineId,
-        @NotBlank String sentenceSnapshot
+        @NotBlank String sentenceSnapshot,
+        Long folderId
 ) {
 }

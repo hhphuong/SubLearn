@@ -8,6 +8,8 @@ public record DictionaryEntrySummaryResponse(
         String displayWord,
         String sourceLanguage,
         String targetLanguage,
+        Long folderId,
+        String folderName,
         String contextualMeaning,
         String dictionaryMeaning,
         List<String> examples,

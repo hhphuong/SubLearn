@@ -68,6 +68,22 @@ export interface VideoSummaryResponse {
   youtubeVideoId: string | null
 }
 
+export interface VideoHistoryEntryResponse {
+  videoId: number
+  youtubeVideoId: string
+  title: string | null
+  sourceLanguage: string | null
+  durationSeconds: number | null
+  lastWatchedAt: string
+}
+
+export interface VideoHistoryPageResponse {
+  page: number
+  size: number
+  totalElements: number
+  entries: VideoHistoryEntryResponse[]
+}
+
 export interface SubtitleTokenDto {
   sequence: number
   startCharOffset: number
@@ -125,6 +141,7 @@ export interface SaveDictionaryRequest {
   videoId: number
   subtitleLineId?: number
   sentenceSnapshot: string
+  folderId?: number | null
 }
 
 export interface SaveDictionaryResponse {
@@ -132,11 +149,26 @@ export interface SaveDictionaryResponse {
   wasNew: boolean
 }
 
+export interface DictionaryFolderResponse {
+  id: number
+  name: string
+  sourceLanguage: string
+  entryCount: number
+  createdAt: string
+}
+
+export interface CreateDictionaryFolderRequest {
+  name: string
+  sourceLanguage: string
+}
+
 export interface DictionaryEntrySummaryResponse {
   id: number
   displayWord: string
   sourceLanguage: string
   targetLanguage: string
+  folderId: number | null
+  folderName: string | null
   contextualMeaning: string | null
   dictionaryMeaning: string | null
   examples: string[]

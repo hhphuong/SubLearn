@@ -1,7 +1,9 @@
 package org.example.sublearn.dictionary;
 
 import jakarta.validation.Valid;
+import org.example.sublearn.dictionary.dto.CreateDictionaryFolderRequest;
 import org.example.sublearn.dictionary.dto.DictionaryEntryDetailResponse;
+import org.example.sublearn.dictionary.dto.DictionaryFolderResponse;
 import org.example.sublearn.dictionary.dto.DictionaryPageResponse;
 import org.example.sublearn.dictionary.dto.SaveDictionaryRequest;
 import org.example.sublearn.dictionary.dto.SaveDictionaryResponse;
@@ -16,6 +18,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/dictionary")
@@ -36,9 +40,11 @@ public class DictionaryController {
     public DictionaryPageResponse list(@AuthenticationPrincipal Long userId,
                                         @RequestParam(defaultValue = "0") int page,
                                         @RequestParam(defaultValue = "20") int size,
+                                        @RequestParam(required = false) String sourceLanguage,
                                         @RequestParam(required = false) String targetLanguage,
+                                        @RequestParam(required = false) Long folderId,
                                         @RequestParam(required = false) String search) {
-        return dictionaryService.list(userId, page, size, targetLanguage, search);
+        return dictionaryService.list(userId, page, size, sourceLanguage, targetLanguage, folderId, search);
     }
 
     @GetMapping("/{id}")
@@ -50,5 +56,24 @@ public class DictionaryController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id, @AuthenticationPrincipal Long userId) {
         dictionaryService.delete(id, userId);
+    }
+
+    @GetMapping("/folders")
+    public List<DictionaryFolderResponse> listFolders(@AuthenticationPrincipal Long userId,
+                                                        @RequestParam String sourceLanguage) {
+        return dictionaryService.listFolders(userId, sourceLanguage);
+    }
+
+    @PostMapping("/folders")
+    @ResponseStatus(HttpStatus.CREATED)
+    public DictionaryFolderResponse createFolder(@Valid @RequestBody CreateDictionaryFolderRequest request,
+                                                  @AuthenticationPrincipal Long userId) {
+        return dictionaryService.createFolder(request, userId);
+    }
+
+    @DeleteMapping("/folders/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteFolder(@PathVariable Long id, @AuthenticationPrincipal Long userId) {
+        dictionaryService.deleteFolder(id, userId);
     }
 }

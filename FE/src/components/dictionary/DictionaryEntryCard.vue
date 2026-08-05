@@ -45,6 +45,7 @@ function formatDate(iso: string) {
           <span class="badge entry-badge me-2"
             >{{ languageLabel(entry.sourceLanguage) }} → {{ languageLabel(entry.targetLanguage) }}</span
           >
+          <span v-if="entry.folderName" class="badge entry-badge-folder me-2">📁 {{ entry.folderName }}</span>
           <span class="badge entry-badge-muted">{{ entry.contextCount }} ngữ cảnh</span>
         </div>
         <button class="btn btn-sm btn-outline-danger" type="button" @click="onDelete">Xóa</button>
@@ -85,6 +86,12 @@ function formatDate(iso: string) {
 .entry-badge-muted {
   background: var(--brand-bg);
   color: var(--brand-muted);
+  font-weight: 600;
+}
+
+.entry-badge-folder {
+  background: #fff3cd;
+  color: #664d03;
   font-weight: 600;
 }
 </style>

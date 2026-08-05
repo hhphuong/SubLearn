@@ -26,8 +26,12 @@ import java.util.stream.IntStream;
 @Component
 public class GeminiClient {
 
-    private static final int MAX_ATTEMPTS = 2;
-    private static final long[] BACKOFF_MS = {500, 1500};
+    // Gemini's free-tier quota is enforced per-minute, so a transient 429 burst (several
+    // users/lookups landing in the same second) usually clears within a couple of seconds -
+    // 2 attempts with a maximum 1.5s wait wasn't enough headroom for that to resolve, which
+    // is why word lookups intermittently succeeded or failed depending on timing.
+    private static final int MAX_ATTEMPTS = 4;
+    private static final long[] BACKOFF_MS = {500, 1000, 2000, 4000};
 
     private final RestClient restClient;
     private final String apiKey;

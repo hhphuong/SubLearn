@@ -72,11 +72,21 @@ export const useSubtitlesStore = defineStore('subtitles', () => {
     }
   }
 
-  /** Loads every remaining page in order - used before building a full-transcript download. */
+  /**
+   * Loads every remaining page in order - used before building a full-transcript download.
+   * Each page with a missing translation triggers its own Gemini call on the backend (see
+   * SubtitleService); for a long video whose translations aren't cached yet, firing all of
+   * those back-to-back in a tight loop can burn through Gemini's free-tier per-minute quota
+   * in a single click. A short pause between pages keeps this download well under that rate
+   * without meaningfully slowing down what's already a "please wait" preparation step.
+   */
   async function loadAllRemaining() {
     const totalPages = Math.ceil(totalLines.value / PAGE_SIZE)
     for (let page = 0; page < totalPages; page++) {
       if (!loadedPages.value.has(page)) {
+        if (page > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 2000))
+        }
         await fetchPage(page)
       }
     }

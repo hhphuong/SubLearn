@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 /**
  * Parses WebVTT into meaningful, sentence/phrase-sized lines.
@@ -38,20 +37,69 @@ public final class VttParser {
      * Gap between words that marks a natural pause - starts a new line. Set high enough
      * that an ordinary mid-sentence breath (typically well under a second) doesn't fragment
      * a complete sentence into several short pieces; only a longer silence - usually a real
-     * break between sentences or thoughts - crosses it.
+     * break between sentences or thoughts - crosses it. Used whenever the transcript has
+     * punctuation to lean on (see {@link #NO_PUNCTUATION_PAUSE_THRESHOLD_MS} otherwise).
      */
     private static final long PAUSE_THRESHOLD_MS = 1800;
     /**
-     * Caps so one long, pause-free monologue still breaks into readable pieces - a safety
-     * net, not the primary mechanism, so it's set loose enough to rarely fire (it used to
-     * be tight enough to cut mid-phrase, e.g. between "the" and "world").
+     * Hard safety net only when punctuation is present - real sentence/pause detection is
+     * what actually decides where lines break in that case, so this is set loose enough
+     * that a normal sentence never hits it. When a transcript has NO punctuation anywhere
+     * (English auto-captions, or an unpunctuated manual track), there is no sentence
+     * signal at all to fall back on, so {@link #NO_PUNCTUATION_MAX_WORDS_PER_LINE} applies
+     * instead and is the actual, primary decider of line breaks in that case.
      */
-    private static final int MAX_WORDS_PER_LINE = 28;
-    private static final long MAX_LINE_DURATION_MS = 14000;
-    /** Manual/human subtitles carry punctuation auto-captions never do - a sentence-ending
-     * mark is a much stronger signal of "complete idea" than any pause length, so it forces
-     * a break right after it even if the next word follows almost immediately. */
-    private static final Pattern SENTENCE_END = Pattern.compile("[.!?][\"')\\]]?$");
+    private static final int MAX_WORDS_PER_LINE = 40;
+    private static final long MAX_LINE_DURATION_MS = 20000;
+    /**
+     * Pause threshold used instead of {@link #PAUSE_THRESHOLD_MS} when the whole transcript
+     * has no punctuation anywhere to detect sentence ends with (English auto-captions, or an
+     * unpunctuated manual track) - this, not a word count, is what must do the real work of
+     * finding "by idea" breaks in that case. Measured against a real English auto-caption
+     * transcript (a natural, conversationally-paced TED talk): word-to-word gaps have a
+     * median of ~160ms with a long tail, and at this threshold essentially every break is a
+     * genuine pause (the word-count safety net below almost never fires) while still landing
+     * on a readable ~8-9 words per line on average - both a 1000ms and especially the old
+     * 1800ms threshold let the word-count cap silently become the actual decider for a third
+     * or more of all breaks, which is exactly the "cut arbitrarily, not by a real pause"
+     * behavior this exists to avoid.
+     */
+    private static final long NO_PUNCTUATION_PAUSE_THRESHOLD_MS = 600;
+    /**
+     * Deliberately tighter than {@link #MAX_WORDS_PER_LINE} (40): that value is a rare
+     * backstop for the punctuated case, where real sentence boundaries do almost all of the
+     * work. Without punctuation, the {@link #NO_PUNCTUATION_PAUSE_THRESHOLD_MS} pause is the
+     * only real signal, and some speech (fast, continuous talkers; podcasts) simply never has
+     * a gap that crosses it for a long stretch - if this cap were also 40 words, that stretch
+     * would ride all the way to a 40-word wall of text, which reads as "still not breaking at
+     * the end of an idea" even though pause detection is technically working. This forces a
+     * break at a shorter, still-readable length instead.
+     */
+    private static final int NO_PUNCTUATION_MAX_WORDS_PER_LINE = 20;
+    private static final long NO_PUNCTUATION_MAX_LINE_DURATION_MS = 10000;
+    /**
+     * Minimum fraction of timeline tokens that must be a sentence-ending mark before a
+     * transcript is treated as "punctuated". Real punctuated prose (manual captions, or
+     * Japanese auto-captions) lands one every ~5-20 tokens (roughly 5%-20%); this is set far
+     * below that so genuinely punctuated content is never misclassified, while still safely
+     * excluding a transcript that only has one or two incidental marks in several thousand
+     * words (see the "2065." example above).
+     */
+    private static final double PUNCTUATION_DENSITY_THRESHOLD = 0.02;
+    /**
+     * A sentence-ending mark is a far stronger "complete idea" signal than any pause
+     * length, so it forces a break right after it even if the next word follows almost
+     * immediately - this is the primary way lines are split, pauses are the fallback for
+     * text that has no punctuation at all.
+     *
+     * <p>Manual/human subtitles always carry punctuation; English auto-captions never do
+     * (no signal here, falls through to pause detection). Japanese (and other CJK)
+     * auto-captions are the exception: YouTube's speech recognition inserts real 。/！/？
+     * even in the machine-generated stream, so this must recognize those too, not just
+     * ASCII . ! ? - otherwise Japanese lines fall back to pause/cap splitting for no reason
+     * even though the source data already marks sentence boundaries.
+     */
+    private static final Pattern SENTENCE_END = Pattern.compile("[.!?。！？][\"')\\]」』]?$");
     /** How long the very last line stays on screen, since there's no "next line" to bound it. */
     private static final long LAST_LINE_TAIL_MS = 2000;
 
@@ -129,6 +177,20 @@ public final class VttParser {
         if (timeline.isEmpty()) {
             return List.of();
         }
+        // A transcript with no real sentence-ending punctuation has no signal at all for
+        // SENTENCE_END to key off; fall back to a pause threshold tuned for that case instead.
+        // Deliberately a density check, not "any match at all": YouTube's ASR occasionally
+        // emits an incidental stray period on its own (observed in production: a spoken year
+        // like "2065" transcribed as "2065.") even in an otherwise completely unpunctuated
+        // English auto-caption - a single such stray mark must not flip an entire ~3000-word
+        // transcript into using the punctuated-case thresholds, which is what an "any match"
+        // check would do and is exactly the "cuts arbitrarily" bug this is meant to prevent.
+        long punctuationCount = timeline.stream().filter(w -> SENTENCE_END.matcher(w.text()).find()).count();
+        boolean hasPunctuation = punctuationCount >= (long) Math.ceil(timeline.size() * PUNCTUATION_DENSITY_THRESHOLD);
+        long pauseThresholdMs = hasPunctuation ? PAUSE_THRESHOLD_MS : NO_PUNCTUATION_PAUSE_THRESHOLD_MS;
+        int maxWordsPerLine = hasPunctuation ? MAX_WORDS_PER_LINE : NO_PUNCTUATION_MAX_WORDS_PER_LINE;
+        long maxLineDurationMs = hasPunctuation ? MAX_LINE_DURATION_MS : NO_PUNCTUATION_MAX_LINE_DURATION_MS;
+
         List<VttCue> result = new ArrayList<>();
         List<TimedWord> current = new ArrayList<>();
         long groupStart = timeline.get(0).timestampMs();
@@ -136,10 +198,13 @@ public final class VttParser {
         for (TimedWord word : timeline) {
             if (!current.isEmpty()) {
                 TimedWord last = current.get(current.size() - 1);
-                boolean bigPause = word.timestampMs() - last.timestampMs() > PAUSE_THRESHOLD_MS;
-                boolean tooLong = current.size() >= MAX_WORDS_PER_LINE
-                        || word.timestampMs() - groupStart > MAX_LINE_DURATION_MS;
-                boolean priorSentenceEnded = current.size() >= 2 && SENTENCE_END.matcher(last.text()).find();
+                boolean bigPause = word.timestampMs() - last.timestampMs() > pauseThresholdMs;
+                boolean tooLong = current.size() >= maxWordsPerLine
+                        || word.timestampMs() - groupStart > maxLineDurationMs;
+                // No minimum chunk size here: an untagged token can be a whole sentence by
+                // itself (e.g. a Japanese line with no per-word tags, or a short manual-
+                // subtitle line), and that still deserves to end the line immediately.
+                boolean priorSentenceEnded = SENTENCE_END.matcher(last.text()).find();
                 if (bigPause || tooLong || priorSentenceEnded) {
                     result.add(finalizeCue(groupStart, current));
                     current = new ArrayList<>();
@@ -161,8 +226,46 @@ public final class VttParser {
 
     private static VttCue finalizeCue(long startMs, List<TimedWord> words) {
         long endMs = words.get(words.size() - 1).timestampMs() + LAST_LINE_TAIL_MS;
-        String text = words.stream().map(TimedWord::text).collect(Collectors.joining(" "));
-        return new VttCue(startMs, endMs, text);
+        return new VttCue(startMs, endMs, joinWords(words));
+    }
+
+    /**
+     * Joins the per-word/per-character tokens back into text. CJK scripts (Japanese,
+     * Chinese) don't put spaces between words at all - Japanese auto-captions tag each
+     * individual character with its own timestamp, so naively space-joining every token
+     * would scatter spaces between every single character (e.g. "は い 、 皆 さ ん"). Only
+     * insert a space when neither side of the boundary is a CJK character.
+     */
+    private static String joinWords(List<TimedWord> words) {
+        StringBuilder sb = new StringBuilder();
+        String previous = null;
+        for (TimedWord word : words) {
+            String current = word.text();
+            if (previous != null && needsSpaceBetween(previous, current)) {
+                sb.append(' ');
+            }
+            sb.append(current);
+            previous = current;
+        }
+        return sb.toString();
+    }
+
+    private static boolean needsSpaceBetween(String previous, String current) {
+        if (previous.isEmpty() || current.isEmpty()) {
+            return false;
+        }
+        char prevLast = previous.charAt(previous.length() - 1);
+        char currFirst = current.charAt(0);
+        return !isCjk(prevLast) && !isCjk(currFirst);
+    }
+
+    private static boolean isCjk(char c) {
+        Character.UnicodeBlock block = Character.UnicodeBlock.of(c);
+        return block == Character.UnicodeBlock.HIRAGANA
+                || block == Character.UnicodeBlock.KATAKANA
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                || block == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION
+                || block == Character.UnicodeBlock.HALFWIDTH_AND_FULLWIDTH_FORMS;
     }
 
     private static long toMillis(String hours, String minutes, String seconds, String millis) {

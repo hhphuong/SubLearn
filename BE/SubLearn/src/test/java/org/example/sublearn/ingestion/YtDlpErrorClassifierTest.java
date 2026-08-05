@@ -32,6 +32,15 @@ class YtDlpErrorClassifierTest {
     }
 
     @Test
+    void classifiesVideoIsNotAvailableError() {
+        // The exact wording yt-dlp uses for a deleted/terminated video - distinct from
+        // "Video unavailable" / "This video is unavailable" above, and previously fell
+        // through to UNKNOWN_ERROR unmatched.
+        assertEquals(FailureReason.VIDEO_UNAVAILABLE,
+                classifier.classify("ERROR: [youtube] hUuC9GoaELI: This video is not available"));
+    }
+
+    @Test
     void classifiesInvalidUrlError() {
         assertEquals(FailureReason.INVALID_URL, classifier.classify("ERROR: Unsupported URL: not-a-url"));
     }

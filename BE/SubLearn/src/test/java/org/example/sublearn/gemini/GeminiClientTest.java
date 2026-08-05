@@ -35,7 +35,7 @@ class GeminiClientTest {
 
         assertThrows(GeminiRateLimitedException.class,
                 () -> client.lookupWordMeaning("run", "I run every day.", "en", "vi"));
-        assertEquals(2, callCount.get());
+        assertEquals(4, callCount.get());
     }
 
     @Test

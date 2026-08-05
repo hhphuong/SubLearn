@@ -8,6 +8,14 @@ interface YoutubePlayerInstance {
   destroy(): void
 }
 
+interface YoutubePlayerStateChangeEvent {
+  data: number
+}
+
+// YT.PlayerState.PLAYING - the IFrame API doesn't expose this enum until the script has
+// loaded, so it's just hardcoded per YouTube's documented (stable) numeric values.
+const YT_STATE_PLAYING = 1
+
 interface YoutubePlayerConstructor {
   new (
     elementId: string,
@@ -15,6 +23,7 @@ interface YoutubePlayerConstructor {
       videoId: string
       events: {
         onReady: () => void
+        onStateChange: (event: YoutubePlayerStateChangeEvent) => void
       }
     },
   ): YoutubePlayerInstance
@@ -63,7 +72,20 @@ export function useYoutubePlayer(elementId: string, videoId: string) {
   // "X is not a function". A user can click a transcript line/word before that happens
   // (subtitles load independently of - and often faster than - the video iframe), so a
   // seek requested that early is queued and replayed once the player is actually ready.
+  //
+  // onReady alone isn't reliably enough, though: a seekTo issued right as the player just
+  // became API-callable can silently be ignored if the video hasn't actually started
+  // loading/buffering yet (a known IFrame API quirk, most noticeable when resuming a video
+  // at a non-zero position right after it's created) - so the same pending seek is kept
+  // and re-applied once more on the first genuine PLAYING state change, which is when the
+  // player has definitely started producing real video output.
   let pendingSeekMs: number | null = null
+
+  function applyPendingSeek() {
+    if (pendingSeekMs !== null) {
+      player.value?.seekTo(pendingSeekMs / 1000, true)
+    }
+  }
 
   async function init() {
     await loadYoutubeIframeApi()
@@ -73,16 +95,19 @@ export function useYoutubePlayer(elementId: string, videoId: string) {
       events: {
         onReady: () => {
           isReady.value = true
-          if (pendingSeekMs !== null) {
-            player.value?.seekTo(pendingSeekMs / 1000, true)
-            pendingSeekMs = null
-          }
+          applyPendingSeek()
           pollTimer = setInterval(() => {
             const current = player.value
             if (current) {
               currentTimeMs.value = Math.round(current.getCurrentTime() * 1000)
             }
           }, CURRENT_TIME_POLL_MS)
+        },
+        onStateChange: (event) => {
+          if (event.data === YT_STATE_PLAYING) {
+            applyPendingSeek()
+            pendingSeekMs = null
+          }
         },
       },
     })
@@ -103,11 +128,10 @@ export function useYoutubePlayer(elementId: string, videoId: string) {
   }
 
   function seekTo(ms: number) {
-    if (!isReady.value) {
-      pendingSeekMs = ms
-      return
+    pendingSeekMs = ms
+    if (isReady.value) {
+      applyPendingSeek()
     }
-    player.value?.seekTo(ms / 1000, true)
   }
 
   onUnmounted(() => {

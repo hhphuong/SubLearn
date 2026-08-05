@@ -22,7 +22,7 @@ describe('HomeView', () => {
     })
 
     expect(wrapper.exists()).toBe(true)
-    expect(wrapper.text()).toContain('SubLearn')
+    expect(wrapper.text()).toContain('Tạo video')
     expect(wrapper.find('#youtubeUrl').exists()).toBe(true)
     expect(wrapper.find('#targetLanguage').exists()).toBe(true)
   })

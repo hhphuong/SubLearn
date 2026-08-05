@@ -45,9 +45,17 @@ public class VideoIngestionPersister {
         this.progressTracker = progressTracker;
     }
 
+    /**
+     * Clears any subtitle lines from a previous attempt before (re-)starting ingestion.
+     * Without this, a reprocess of an already-READY video - or a retry after a prior attempt
+     * failed partway through {@link #persistLines}, leaving some lines already saved - would
+     * append a second, overlapping set of lines with sequence numbers starting back at 0
+     * instead of replacing them.
+     */
     @Transactional
     public void markProcessing(Long videoId) {
         Video video = getVideo(videoId);
+        subtitleLineRepository.deleteByVideo(video);
         video.setStatus(VideoStatus.PROCESSING);
         video.resetProgress();
         progressTracker.clear(videoId);
