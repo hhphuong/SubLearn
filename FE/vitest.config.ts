@@ -10,6 +10,8 @@ export default mergeConfig(
         '@vue/test-utils': fileURLToPath(
           new URL('./node_modules/@vue/test-utils', import.meta.url),
         ),
+        'vue-router': fileURLToPath(new URL('./node_modules/vue-router', import.meta.url)),
+        '@pinia/testing': fileURLToPath(new URL('./node_modules/@pinia/testing', import.meta.url)),
       },
     },
     server: {
