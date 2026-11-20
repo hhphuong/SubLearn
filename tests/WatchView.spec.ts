@@ -63,7 +63,8 @@ describe('WatchView resume-to-exact-position', () => {
       targetLanguage: 'vi',
       sameLanguage: false,
       lines: [],
-      translationUnavailable: false,
+      translationAvailable: true,
+      activeTranslationJob: null,
     })
   })
 

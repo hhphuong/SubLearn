@@ -1,13 +1,15 @@
 package org.example.sublearn.video;
 
 import jakarta.validation.Valid;
+import org.example.sublearn.job.ProcessingJobResponse;
 import org.example.sublearn.video.dto.VideoHistoryPageResponse;
+import org.example.sublearn.video.dto.VideoLibraryPageResponse;
+import org.example.sublearn.video.dto.VideoProgressRequest;
 import org.example.sublearn.video.dto.VideoStatusResponse;
 import org.example.sublearn.video.dto.VideoSubmitRequest;
 import org.example.sublearn.video.dto.VideoSubmitResponse;
 import org.example.sublearn.video.dto.VideoSummaryResponse;
-import org.example.sublearn.video.dto.VideoLibraryPageResponse;
-import org.example.sublearn.video.dto.VideoProgressRequest;
+import org.example.sublearn.video.dto.VideoTranslationRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -59,8 +61,8 @@ public class VideoController {
 
     @GetMapping("/library")
     public VideoLibraryPageResponse library(@AuthenticationPrincipal Long userId,
-                                             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
-                                             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "20") int size) {
+                                             @RequestParam(defaultValue = "0") int page,
+                                             @RequestParam(defaultValue = "20") int size) {
         return videoLibraryService.list(userId, page, size);
     }
 
@@ -77,9 +79,19 @@ public class VideoController {
         videoService.recordWatch(videoId, userId);
     }
 
+    @PostMapping("/{videoId}/translations")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ProcessingJobResponse requestTranslation(@PathVariable Long videoId,
+                                                     @Valid @RequestBody VideoTranslationRequest request,
+                                                     @AuthenticationPrincipal Long userId) {
+        return videoService.requestTranslation(videoId, request.targetLanguage(), userId);
+    }
+
     @PostMapping("/{videoId}/reprocess")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public VideoSubmitResponse reprocess(@PathVariable Long videoId) {
-        return videoService.reprocess(videoId);
+    public ProcessingJobResponse reprocess(@PathVariable Long videoId,
+                                            @Valid @RequestBody VideoTranslationRequest request,
+                                            @AuthenticationPrincipal Long userId) {
+        return videoService.reprocess(videoId, request.targetLanguage(), userId);
     }
 }

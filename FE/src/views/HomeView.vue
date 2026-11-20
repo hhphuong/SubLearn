@@ -44,9 +44,23 @@ async function onSubmit() {
   }
 }
 
+const isRetrying = ref(false)
+
 function onCancelStuckSubmit() {
   videoStore.reset()
   submitError.value = null
+}
+
+async function onRetryFailedJob() {
+  submitError.value = null
+  isRetrying.value = true
+  try {
+    await videoStore.retryCurrentJob()
+  } catch {
+    submitError.value = VIDEO_CREATE_ERROR_MESSAGE
+  } finally {
+    isRetrying.value = false
+  }
 }
 
 // progressPercent comes straight from the backend, driven by real milestones (yt-dlp's
@@ -54,14 +68,18 @@ function onCancelStuckSubmit() {
 const progressPercent = computed(() => videoStore.progressPercent ?? 0)
 
 const progressLabel = computed(() => {
+  const retrySuffix =
+    videoStore.retryCount && videoStore.retryCount > 0
+      ? ` — đang thử lại (${videoStore.retryCount}/${videoStore.maxRetries ?? 5})`
+      : ''
   if (videoStore.totalLines) {
-    return `Đang xử lý phụ đề: ${videoStore.processedLines ?? 0}/${videoStore.totalLines} dòng (${progressPercent.value}%)`
+    return `Đang xử lý & dịch phụ đề: ${videoStore.processedLines ?? 0}/${videoStore.totalLines} dòng (${progressPercent.value}%)${retrySuffix}`
   }
   const percent = progressPercent.value
-  if (percent >= 50) return `Đang tải phụ đề từ YouTube... (${percent}%)`
-  if (percent >= 20) return `Đang tải thông tin video... (${percent}%)`
-  if (percent >= 10) return `Đang kết nối tới YouTube... (${percent}%)`
-  return `Đang khởi tạo... (${percent}%)`
+  if (percent >= 50) return `Đang tải phụ đề từ YouTube... (${percent}%)${retrySuffix}`
+  if (percent >= 20) return `Đang tải thông tin video... (${percent}%)${retrySuffix}`
+  if (percent >= 10) return `Đang kết nối tới YouTube... (${percent}%)${retrySuffix}`
+  return `Đang khởi tạo... (${percent}%)${retrySuffix}`
 })
 
 const isSubmittingInThisSession = computed(
@@ -132,8 +150,17 @@ onUnmounted(() => {
       </form>
 
       <div v-if="submitError" class="alert alert-danger py-2 mt-2 mb-0">{{ submitError }}</div>
-      <div v-if="videoStore.status === 'FAILED'" class="alert alert-danger py-2 mt-2 mb-0">
-        {{ failureMessage(videoStore.failureReason) }}
+      <div v-if="videoStore.status === 'FAILED'" class="alert alert-danger py-2 mt-2 mb-0 d-flex align-items-center justify-content-between gap-2 flex-wrap">
+        <span>{{ failureMessage(videoStore.failureReason) }}</span>
+        <button
+          v-if="videoStore.jobId"
+          class="btn btn-sm btn-outline-danger text-nowrap"
+          type="button"
+          :disabled="isRetrying"
+          @click="onRetryFailedJob"
+        >
+          {{ isRetrying ? 'Đang gửi lại...' : '⟳ Xử lý lại' }}
+        </button>
       </div>
 
       <div v-if="isSubmittingInThisSession" class="submit-progress">

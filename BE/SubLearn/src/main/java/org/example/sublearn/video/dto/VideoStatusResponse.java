@@ -13,6 +13,9 @@ public record VideoStatusResponse(
         String youtubeVideoId,
         Integer totalLines,
         Integer processedLines,
-        Integer progressPercent
+        Integer progressPercent,
+        Long jobId,
+        Integer retryCount,
+        Integer maxRetries
 ) {
 }

@@ -1,5 +1,6 @@
-import http from '@/api/http'
+import http from './http'
 import type {
+  ProcessingJobResponse,
   VideoHistoryPageResponse,
   VideoLibraryPageResponse,
   VideoStatusResponse,
@@ -23,8 +24,15 @@ export const videoApi = {
   getHistory(page: number, size: number) {
     return http.get<VideoHistoryPageResponse>('/api/videos/history', { params: { page, size } }).then((r) => r.data)
   },
-  reprocess(videoId: number) {
-    return http.post<VideoSubmitResponse>(`/api/videos/${videoId}/reprocess`).then((r) => r.data)
+  requestTranslation(videoId: number, targetLanguage: string) {
+    return http
+      .post<ProcessingJobResponse>(`/api/videos/${videoId}/translations`, { targetLanguage })
+      .then((r) => r.data)
+  },
+  reprocess(videoId: number, targetLanguage: string) {
+    return http
+      .post<ProcessingJobResponse>(`/api/videos/${videoId}/reprocess`, { targetLanguage })
+      .then((r) => r.data)
   },
   getLibrary(page = 0, size = 20) {
     return http

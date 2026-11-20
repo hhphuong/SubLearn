@@ -1,5 +1,7 @@
 package org.example.sublearn.video.dto;
 
+import org.example.sublearn.job.ProcessingJobResponse;
+
 import java.util.List;
 
 public record SubtitlePageResponse(
@@ -10,6 +12,7 @@ public record SubtitlePageResponse(
         String targetLanguage,
         boolean sameLanguage,
         List<SubtitleLineDto> lines,
-        boolean translationUnavailable
+        boolean translationAvailable,
+        ProcessingJobResponse activeTranslationJob
 ) {
 }

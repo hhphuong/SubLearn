@@ -1,21 +1,20 @@
 package org.example.sublearn.video;
 
 import org.example.sublearn.common.ApiException;
+import org.example.sublearn.domain.JobStatus;
 import org.example.sublearn.domain.SubtitleLine;
 import org.example.sublearn.domain.SubtitleLineTranslation;
 import org.example.sublearn.domain.SubtitleToken;
 import org.example.sublearn.domain.Video;
 import org.example.sublearn.domain.VideoStatus;
-import org.example.sublearn.gemini.GeminiClient;
-import org.example.sublearn.gemini.GeminiUnavailableException;
+import org.example.sublearn.job.ProcessingJobResponse;
+import org.example.sublearn.job.ProcessingJobService;
 import org.example.sublearn.repository.SubtitleLineRepository;
 import org.example.sublearn.repository.SubtitleLineTranslationRepository;
 import org.example.sublearn.repository.SubtitleTokenRepository;
 import org.example.sublearn.video.dto.SubtitleLineDto;
 import org.example.sublearn.video.dto.SubtitlePageResponse;
 import org.example.sublearn.video.dto.SubtitleTokenDto;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -26,29 +25,33 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Pure read-only service for serving persisted subtitles and translations.
+ * Never calls yt-dlp or Gemini directly; translations are created asynchronously
+ * through RabbitMQ jobs (see {@link org.example.sublearn.job.VideoJobConsumer}).
+ */
 @Service
 public class SubtitleService {
-
-    private static final Logger log = LoggerFactory.getLogger(SubtitleService.class);
 
     private final VideoService videoService;
     private final SubtitleLineRepository subtitleLineRepository;
     private final SubtitleTokenRepository subtitleTokenRepository;
     private final SubtitleLineTranslationRepository subtitleLineTranslationRepository;
-    private final GeminiClient geminiClient;
+    private final ProcessingJobService processingJobService;
 
-    public SubtitleService(VideoService videoService, SubtitleLineRepository subtitleLineRepository,
+    public SubtitleService(VideoService videoService,
+                            SubtitleLineRepository subtitleLineRepository,
                             SubtitleTokenRepository subtitleTokenRepository,
                             SubtitleLineTranslationRepository subtitleLineTranslationRepository,
-                            GeminiClient geminiClient) {
+                            ProcessingJobService processingJobService) {
         this.videoService = videoService;
         this.subtitleLineRepository = subtitleLineRepository;
         this.subtitleTokenRepository = subtitleTokenRepository;
         this.subtitleLineTranslationRepository = subtitleLineTranslationRepository;
-        this.geminiClient = geminiClient;
+        this.processingJobService = processingJobService;
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public SubtitlePageResponse getSubtitles(Long videoId, String targetLanguage, int page, int size) {
         Video video = videoService.getVideo(videoId);
         if (video.getStatus() != VideoStatus.READY) {
@@ -60,15 +63,26 @@ public class SubtitleService {
 
         Map<Long, List<SubtitleToken>> tokensByLine = groupTokensByLine(lines);
         boolean sameLanguage = targetLanguage.equalsIgnoreCase(video.getSourceLanguage());
-        TranslationResult translationResult = sameLanguage
-                ? new TranslationResult(Map.of(), false)
-                : resolveTranslations(video, lines, targetLanguage);
+
+        Map<Long, String> translationsByLineId = sameLanguage || lines.isEmpty()
+                ? Map.of()
+                : loadTranslations(lines, targetLanguage);
+
+        boolean translationAvailable = sameLanguage
+                || lines.isEmpty()
+                || translationsByLineId.size() == lines.size();
+
+        ProcessingJobResponse activeTranslationJob = sameLanguage
+                ? null
+                : processingJobService.findLatestTranslationJob(videoId, targetLanguage)
+                        .filter(j -> j.status() != JobStatus.COMPLETED)
+                        .orElse(null);
 
         List<SubtitleLineDto> lineDtos = new ArrayList<>(lines.size());
         for (SubtitleLine line : lines) {
             String targetText = sameLanguage
                     ? line.getSourceText()
-                    : translationResult.byLineId().getOrDefault(line.getId(), line.getSourceText());
+                    : translationsByLineId.getOrDefault(line.getId(), "");
             List<SubtitleTokenDto> tokenDtos = tokensByLine.getOrDefault(line.getId(), List.of()).stream()
                     .map(t -> new SubtitleTokenDto(t.getSequence(), t.getStartCharOffset(), t.getEndCharOffset(), t.getSurfaceText(), t.getTokenType()))
                     .toList();
@@ -76,7 +90,7 @@ public class SubtitleService {
         }
 
         return new SubtitlePageResponse(page, size, linePage.getTotalElements(), video.getSourceLanguage(), targetLanguage,
-                sameLanguage, lineDtos, translationResult.degraded());
+                sameLanguage, lineDtos, translationAvailable, activeTranslationJob);
     }
 
     private Map<Long, List<SubtitleToken>> groupTokensByLine(List<SubtitleLine> lines) {
@@ -90,41 +104,11 @@ public class SubtitleService {
         return grouped;
     }
 
-    /** @param degraded true if any line fell back to its source text because Gemini was unavailable/rate-limited. */
-    private record TranslationResult(Map<Long, String> byLineId, boolean degraded) {
-    }
-
-    private TranslationResult resolveTranslations(Video video, List<SubtitleLine> lines, String targetLanguage) {
-        if (lines.isEmpty()) {
-            return new TranslationResult(Map.of(), false);
-        }
+    private Map<Long, String> loadTranslations(List<SubtitleLine> lines, String targetLanguage) {
         Map<Long, String> byLineId = new HashMap<>();
         for (SubtitleLineTranslation translation : subtitleLineTranslationRepository.findBySubtitleLineInAndTargetLanguage(lines, targetLanguage)) {
             byLineId.put(translation.getSubtitleLine().getId(), translation.getTranslatedText());
         }
-
-        List<SubtitleLine> missing = lines.stream().filter(l -> !byLineId.containsKey(l.getId())).toList();
-        if (missing.isEmpty()) {
-            return new TranslationResult(byLineId, false);
-        }
-
-        try {
-            List<String> sourceTexts = missing.stream().map(SubtitleLine::getSourceText).toList();
-            List<String> translatedTexts = geminiClient.translateLines(sourceTexts, video.getSourceLanguage(), targetLanguage);
-            for (int i = 0; i < missing.size(); i++) {
-                SubtitleLine line = missing.get(i);
-                String translatedText = translatedTexts.get(i);
-                subtitleLineTranslationRepository.save(new SubtitleLineTranslation(line, targetLanguage, translatedText));
-                byLineId.put(line.getId(), translatedText);
-            }
-        } catch (GeminiUnavailableException e) {
-            log.warn("Translation unavailable for video {} -> {}, falling back to source text for {} lines",
-                    video.getId(), targetLanguage, missing.size(), e);
-            for (SubtitleLine line : missing) {
-                byLineId.put(line.getId(), line.getSourceText());
-            }
-            return new TranslationResult(byLineId, true);
-        }
-        return new TranslationResult(byLineId, false);
+        return byLineId;
     }
 }

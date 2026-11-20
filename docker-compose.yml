@@ -34,6 +34,27 @@ services:
     networks:
       - sublearn-net
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: sublearn-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-sublearn}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-sublearn}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - sublearn-rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    networks:
+      - sublearn-net
+
   backend:
     build:
       context: ./BE/SubLearn
@@ -54,6 +75,10 @@ services:
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-lite-latest}
       GEMINI_READ_TIMEOUT_MS: ${GEMINI_READ_TIMEOUT_MS:-60000}
       GEMINI_CONNECT_TIMEOUT_MS: ${GEMINI_CONNECT_TIMEOUT_MS:-10000}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-sublearn}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-sublearn}
       TZ: UTC
     volumes:
       # Mount the whole folder so the stack still starts when the cookies file is absent
@@ -77,6 +102,8 @@ services:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
       mysql:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - sublearn-net
@@ -103,3 +130,4 @@ networks:
 
 volumes:
   sublearn-mysql-data:
+  sublearn-rabbitmq-data:

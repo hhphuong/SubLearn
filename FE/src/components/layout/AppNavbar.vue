@@ -31,7 +31,14 @@ async function onLogout() {
       <div class="app-navbar__actions">
         <template v-if="authStore.isAuthenticated">
           <span class="app-navbar__user">{{ authStore.user?.displayName || authStore.user?.email }}</span>
-          <button class="btn btn-outline-primary btn-sm" type="button" @click="onLogout">Đăng xuất</button>
+          <button class="btn-logout" type="button" @click="onLogout">
+            <svg class="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span>Đăng xuất</span>
+          </button>
         </template>
         <template v-else>
           <RouterLink class="app-navbar__link" to="/login">Đăng nhập</RouterLink>
@@ -108,6 +115,35 @@ async function onLogout() {
   color: var(--brand-muted);
   font-size: 0.875rem;
   font-weight: 600;
+}
+
+.btn-logout {
+  height: 34px;
+  padding: 0 0.75rem;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #dcdfe4;
+  color: #4a5568;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.btn-logout:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #1f2937;
+}
+
+.btn-icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
 }
 
 @media (max-width: 640px) {

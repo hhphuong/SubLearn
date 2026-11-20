@@ -140,6 +140,35 @@ public class VideoIngestionPersister {
         progressTracker.clear(videoId);
     }
 
+    @Transactional(readOnly = true)
+    public List<String> loadSourceTexts(Long videoId) {
+        Video video = getVideo(videoId);
+        return subtitleLineRepository.findByVideoOrderBySequenceAsc(video).stream()
+                .map(SubtitleLine::getSourceText)
+                .toList();
+    }
+
+    /**
+     * Atomically replaces all translations for a video + targetLanguage.
+     * Called only after Gemini has finished translating 100% of lines in memory,
+     * so previous translations are never lost if translation fails.
+     */
+    @Transactional
+    public void replaceTranslations(Long videoId, String targetLanguage, List<String> translatedTexts) {
+        Video video = getVideo(videoId);
+        List<SubtitleLine> lines = subtitleLineRepository.findByVideoOrderBySequenceAsc(video);
+        if (lines.size() != translatedTexts.size()) {
+            throw new IllegalStateException("Translation count mismatch: expected " + lines.size()
+                    + " but got " + translatedTexts.size());
+        }
+        subtitleLineTranslationRepository.deleteBySubtitleLine_VideoAndTargetLanguage(video, targetLanguage);
+        subtitleLineTranslationRepository.flush();
+        for (int i = 0; i < lines.size(); i++) {
+            subtitleLineTranslationRepository.save(
+                    new SubtitleLineTranslation(lines.get(i), targetLanguage, translatedTexts.get(i)));
+        }
+    }
+
     private Video getVideo(Long videoId) {
         return videoRepository.findById(videoId)
                 .orElseThrow(() -> ApiException.notFound("VIDEO_NOT_FOUND", "Video not found: " + videoId));

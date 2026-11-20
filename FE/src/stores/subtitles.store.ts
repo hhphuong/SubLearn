@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { subtitleApi } from '@/api/subtitle.api'
-import type { SubtitleLineDto } from '@/types/api'
+import type { ProcessingJobResponse, SubtitleLineDto } from '@/types/api'
 
 const PAGE_SIZE = 50
 
@@ -10,7 +10,8 @@ export const useSubtitlesStore = defineStore('subtitles', () => {
   const targetLanguage = ref<string | null>(null)
   const sourceLanguage = ref<string | null>(null)
   const sameLanguage = ref(false)
-  const translationUnavailable = ref(false)
+  const translationAvailable = ref(true)
+  const activeTranslationJob = ref<ProcessingJobResponse | null>(null)
   const totalLines = ref(0)
   const lines = ref<SubtitleLineDto[]>([])
   const loadedPages = ref(new Set<number>())
@@ -22,7 +23,8 @@ export const useSubtitlesStore = defineStore('subtitles', () => {
     targetLanguage.value = null
     sourceLanguage.value = null
     sameLanguage.value = false
-    translationUnavailable.value = false
+    translationAvailable.value = true
+    activeTranslationJob.value = null
     totalLines.value = 0
     lines.value = []
     loadedPages.value = new Set()
@@ -40,9 +42,8 @@ export const useSubtitlesStore = defineStore('subtitles', () => {
       sourceLanguage.value = response.sourceLanguage
       sameLanguage.value = response.sameLanguage
       totalLines.value = response.totalLines
-      if (response.translationUnavailable) {
-        translationUnavailable.value = true
-      }
+      translationAvailable.value = response.translationAvailable
+      activeTranslationJob.value = response.activeTranslationJob
 
       const merged = [...lines.value, ...response.lines]
       merged.sort((a, b) => a.sequence - b.sequence)
@@ -74,19 +75,12 @@ export const useSubtitlesStore = defineStore('subtitles', () => {
 
   /**
    * Loads every remaining page in order - used before building a full-transcript download.
-   * Each page with a missing translation triggers its own Gemini call on the backend (see
-   * SubtitleService); for a long video whose translations aren't cached yet, firing all of
-   * those back-to-back in a tight loop can burn through Gemini's free-tier per-minute quota
-   * in a single click. A short pause between pages keeps this download well under that rate
-   * without meaningfully slowing down what's already a "please wait" preparation step.
+   * Subtitle pages are now pure DB reads, so no artificial rate-limit sleep is needed.
    */
   async function loadAllRemaining() {
     const totalPages = Math.ceil(totalLines.value / PAGE_SIZE)
     for (let page = 0; page < totalPages; page++) {
       if (!loadedPages.value.has(page)) {
-        if (page > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 2000))
-        }
         await fetchPage(page)
       }
     }
@@ -97,7 +91,8 @@ export const useSubtitlesStore = defineStore('subtitles', () => {
     targetLanguage,
     sourceLanguage,
     sameLanguage,
-    translationUnavailable,
+    translationAvailable,
+    activeTranslationJob,
     totalLines,
     lines,
     loadedPages,

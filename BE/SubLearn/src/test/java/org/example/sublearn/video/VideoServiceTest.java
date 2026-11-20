@@ -2,12 +2,15 @@ package org.example.sublearn.video;
 
 import org.example.sublearn.common.ApiException;
 import org.example.sublearn.domain.AppUser;
+import org.example.sublearn.domain.JobStatus;
+import org.example.sublearn.domain.JobType;
 import org.example.sublearn.domain.Video;
 import org.example.sublearn.domain.VideoStatus;
 import org.example.sublearn.domain.VideoWatchHistory;
-import org.example.sublearn.ingestion.VideoIngestionService;
 import org.example.sublearn.ingestion.VideoProgressTracker;
 import org.example.sublearn.ingestion.YouTubeUrlParser;
+import org.example.sublearn.job.ProcessingJobResponse;
+import org.example.sublearn.job.ProcessingJobService;
 import org.example.sublearn.repository.AppUserRepository;
 import org.example.sublearn.repository.VideoRepository;
 import org.example.sublearn.repository.VideoWatchHistoryRepository;
@@ -25,8 +28,6 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -40,7 +41,7 @@ class VideoServiceTest {
     private AppUserRepository appUserRepository;
     private VideoWatchHistoryRepository videoWatchHistoryRepository;
     private VideoLibraryService videoLibraryService;
-    private VideoIngestionService videoIngestionService;
+    private ProcessingJobService processingJobService;
     private VideoService service;
     private AppUser user;
     private Video video;
@@ -52,55 +53,59 @@ class VideoServiceTest {
         videoWatchHistoryRepository = mock(VideoWatchHistoryRepository.class);
         videoLibraryService = mock(VideoLibraryService.class);
         YouTubeUrlParser youTubeUrlParser = mock(YouTubeUrlParser.class);
-        videoIngestionService = mock(VideoIngestionService.class);
         VideoProgressTracker progressTracker = mock(VideoProgressTracker.class);
-        service = new VideoService(videoRepository, appUserRepository, youTubeUrlParser, videoIngestionService,
-                progressTracker, videoWatchHistoryRepository, videoLibraryService);
+        processingJobService = mock(ProcessingJobService.class);
+        service = new VideoService(videoRepository, appUserRepository, youTubeUrlParser,
+                progressTracker, videoWatchHistoryRepository, videoLibraryService, processingJobService);
 
         user = new AppUser("learner@example.com", "hash", "Learner");
         when(appUserRepository.getReferenceById(1L)).thenReturn(user);
 
         video = new Video("dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", user);
-        // getId() is normally only populated once JPA assigns it on save(); reprocess() needs
-        // a real id to pass through to ingest(), so this stand-in mirrors what a row loaded
-        // back out of the repository would already have.
         ReflectionTestUtils.setField(video, "id", 10L);
         when(videoRepository.findById(10L)).thenReturn(Optional.of(video));
     }
 
     @Test
-    void reprocessResetsAnAlreadyReadyVideoToPendingAndRetriggersIngestion() {
+    void reprocessEnqueuesRetranslateJobForReadyVideoWithoutChangingVideoStatus() {
         video.setStatus(VideoStatus.READY);
         video.setSourceLanguage("en");
+        ProcessingJobResponse expectedJob = new ProcessingJobResponse(
+                55L, 10L, JobType.RETRANSLATE_SUBTITLES, JobStatus.PENDING, "en", "vi", 0, 5, 0, null, null);
+        when(processingJobService.createAndEnqueue(video, 1L, JobType.RETRANSLATE_SUBTITLES, "en", "vi"))
+                .thenReturn(expectedJob);
 
-        VideoSubmitResponse response = service.reprocess(10L);
+        ProcessingJobResponse response = service.reprocess(10L, "vi", 1L);
 
-        assertEquals(VideoStatus.PENDING, video.getStatus());
-        assertEquals(VideoStatus.PENDING, response.status());
-        verify(videoIngestionService).ingest(eq(10L), eq("dQw4w9WgXcQ"), eq("en"));
+        assertEquals(55L, response.jobId());
+        assertEquals(JobType.RETRANSLATE_SUBTITLES, response.jobType());
+        assertEquals(VideoStatus.READY, video.getStatus());
+        verify(processingJobService).createAndEnqueue(video, 1L, JobType.RETRANSLATE_SUBTITLES, "en", "vi");
     }
 
     @Test
-    void reprocessRejectsAVideoThatHasNeverFinishedIngestionOnce() {
-        // FAILED with sourceLanguage still null: the one and only ingestion attempt never
-        // got far enough to detect a language, so there's nothing a prior run produced to redo.
+    void reprocessRejectsVideoThatIsNotReady() {
         video.setStatus(VideoStatus.FAILED);
 
-        ApiException exception = assertThrows(ApiException.class, () -> service.reprocess(10L));
+        ApiException exception = assertThrows(ApiException.class, () -> service.reprocess(10L, "vi", 1L));
 
-        assertEquals("VIDEO_NEVER_INGESTED", exception.getCode());
-        verify(videoIngestionService, never()).ingest(any(), any(), any());
+        assertEquals("VIDEO_NOT_READY", exception.getCode());
+        verify(processingJobService, never()).createAndEnqueue(any(), any(), any(), any(), any());
     }
 
     @Test
-    void reprocessIsANoOpWhileAlreadyPendingOrProcessing() {
-        video.setStatus(VideoStatus.PROCESSING);
+    void requestTranslationEnqueuesTranslateJobForNewTargetLanguage() {
+        video.setStatus(VideoStatus.READY);
         video.setSourceLanguage("en");
+        ProcessingJobResponse expectedJob = new ProcessingJobResponse(
+                66L, 10L, JobType.TRANSLATE_SUBTITLES, JobStatus.PENDING, "en", "ja", 0, 5, 0, null, null);
+        when(processingJobService.createAndEnqueue(video, 1L, JobType.TRANSLATE_SUBTITLES, "en", "ja"))
+                .thenReturn(expectedJob);
 
-        VideoSubmitResponse response = service.reprocess(10L);
+        ProcessingJobResponse response = service.requestTranslation(10L, "ja", 1L);
 
-        assertEquals(VideoStatus.PROCESSING, response.status());
-        verify(videoIngestionService, never()).ingest(any(), any(), any());
+        assertEquals(66L, response.jobId());
+        assertEquals(JobType.TRANSLATE_SUBTITLES, response.jobType());
     }
 
     @Test
@@ -120,7 +125,6 @@ class VideoServiceTest {
         service.recordWatch(10L, 1L);
 
         verify(videoWatchHistoryRepository, times(2)).save(any());
-        // touch() should have bumped the timestamp forward (or at least not gone backwards).
         assert !saved.getLastWatchedAt().isBefore(firstWatchedAt);
     }
 
@@ -145,16 +149,16 @@ class VideoServiceTest {
     }
 
     @Test
-    void cachedReadyVideoIsAddedToNewUsersLibraryWithoutRunningIngestionAgain() {
-        VideoRepository videoRepository = mock(VideoRepository.class);
-        AppUserRepository appUserRepository = mock(AppUserRepository.class);
+    void cachedReadyVideoIsAddedToNewUsersLibraryWithoutEnqueueingIngestionAgain() {
+        VideoRepository repo = mock(VideoRepository.class);
+        AppUserRepository userRepo = mock(AppUserRepository.class);
         YouTubeUrlParser urlParser = mock(YouTubeUrlParser.class);
-        VideoIngestionService ingestionService = mock(VideoIngestionService.class);
         VideoProgressTracker progressTracker = mock(VideoProgressTracker.class);
         VideoWatchHistoryRepository watchHistoryRepository = mock(VideoWatchHistoryRepository.class);
         VideoLibraryService libraryService = mock(VideoLibraryService.class);
-        VideoService service = new VideoService(videoRepository, appUserRepository, urlParser,
-                ingestionService, progressTracker, watchHistoryRepository, libraryService);
+        ProcessingJobService jobService = mock(ProcessingJobService.class);
+        VideoService svc = new VideoService(repo, userRepo, urlParser,
+                progressTracker, watchHistoryRepository, libraryService, jobService);
 
         AppUser originalUser = new AppUser("first@example.com", "hash", "First");
         Video cachedVideo = new Video("5MuIMqhT8DM", "https://youtu.be/5MuIMqhT8DM", originalUser);
@@ -163,15 +167,15 @@ class VideoServiceTest {
 
         when(urlParser.extractVideoId("https://youtu.be/5MuIMqhT8DM"))
                 .thenReturn(Optional.of("5MuIMqhT8DM"));
-        when(videoRepository.findByYoutubeVideoId("5MuIMqhT8DM"))
+        when(repo.findByYoutubeVideoId("5MuIMqhT8DM"))
                 .thenReturn(Optional.of(cachedVideo));
 
-        VideoSubmitResponse response = service.submitVideo(
-                "https://youtu.be/5MuIMqhT8DM", "en", 99L);
+        VideoSubmitResponse response = svc.submitVideo(
+                "https://youtu.be/5MuIMqhT8DM", "en", "vi", 99L);
 
         assertEquals(42L, response.videoId());
         assertEquals(VideoStatus.READY, response.status());
         verify(libraryService).addToLibrary(99L, cachedVideo);
-        verify(ingestionService, never()).ingest(anyLong(), anyString(), anyString());
+        verify(jobService, never()).createAndEnqueue(any(), any(), any(), any(), any());
     }
 }

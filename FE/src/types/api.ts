@@ -1,5 +1,23 @@
 export type VideoStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED'
 
+export type JobType = 'INGEST_VIDEO' | 'TRANSLATE_SUBTITLES' | 'RETRANSLATE_SUBTITLES'
+
+export type JobStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+
+export interface ProcessingJobResponse {
+  jobId: number
+  videoId: number
+  jobType: JobType
+  status: JobStatus
+  sourceLanguage: string | null
+  targetLanguage: string | null
+  retryCount: number
+  maxRetries: number
+  progressPercent: number
+  failureReason: FailureReason | null
+  failureMessage: string | null
+}
+
 export type FailureReason =
   | 'NO_CAPTIONS_AVAILABLE'
   | 'INVALID_URL'
@@ -45,6 +63,7 @@ export interface MeResponse {
 export interface VideoSubmitResponse {
   videoId: number
   status: VideoStatus
+  jobId?: number | null
 }
 
 export interface VideoStatusResponse {
@@ -58,6 +77,9 @@ export interface VideoStatusResponse {
   totalLines: number | null
   processedLines: number | null
   progressPercent: number | null
+  jobId?: number | null
+  retryCount?: number | null
+  maxRetries?: number | null
 }
 
 export interface VideoSummaryResponse {
@@ -130,7 +152,8 @@ export interface SubtitlePageResponse {
   targetLanguage: string
   sameLanguage: boolean
   lines: SubtitleLineDto[]
-  translationUnavailable: boolean
+  translationAvailable: boolean
+  activeTranslationJob: ProcessingJobResponse | null
 }
 
 export interface WordLookupRequest {

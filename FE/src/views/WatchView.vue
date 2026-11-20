@@ -2,22 +2,21 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { videoApi } from '@/api/video.api'
+import { jobApi } from '@/api/job.api'
 import { useSubtitlesStore } from '@/stores/subtitles.store'
-import { useVideoStore } from '@/stores/video.store'
 import { useWatchSessionStore } from '@/stores/watchSession.store'
 import { useSubtitleSync } from '@/composables/useSubtitleSync'
 import YoutubePlayer from '@/components/watch/YoutubePlayer.vue'
 import SubtitleLine from '@/components/watch/SubtitleLine.vue'
 import WordPopup from '@/components/watch/WordPopup.vue'
 import { toApiError } from '@/api/errors'
-import { DEFAULT_TARGET_LANGUAGE_CODE, TARGET_LANGUAGES } from '@/utils/languages'
-import type { SubtitleLineDto, SubtitleTokenDto } from '@/types/api'
+import { DEFAULT_TARGET_LANGUAGE_CODE, TARGET_LANGUAGES, languageLabel } from '@/utils/languages'
+import type { ProcessingJobResponse, SubtitleLineDto, SubtitleTokenDto } from '@/types/api'
 
 const props = defineProps<{ videoId: string }>()
 const route = useRoute()
 const router = useRouter()
 const subtitlesStore = useSubtitlesStore()
-const videoStore = useVideoStore()
 const watchSessionStore = useWatchSessionStore()
 
 const numericVideoId = computed(() => Number(props.videoId))
@@ -83,15 +82,98 @@ function closePopup() {
   activeTokenLine.value = null
 }
 
-// --- Translation display: hidden by default, toggled on demand. ---
+// --- Translation display & async translation/reprocess job tracking ---
 const showTranslation = ref(false)
+const translationJob = ref<ProcessingJobResponse | null>(null)
+const translationActionError = ref<string | null>(null)
+const isSubmittingTranslationJob = ref(false)
+let translationJobPollTimer: ReturnType<typeof setTimeout> | null = null
+
+const isTranslationJobActive = computed(
+  () => translationJob.value?.status === 'PENDING' || translationJob.value?.status === 'PROCESSING',
+)
+
+function stopTranslationJobPolling() {
+  if (translationJobPollTimer) {
+    clearTimeout(translationJobPollTimer)
+    translationJobPollTimer = null
+  }
+}
+
+function startTranslationJobPolling(job: ProcessingJobResponse) {
+  stopTranslationJobPolling()
+  translationJob.value = job
+  if (job.status !== 'PENDING' && job.status !== 'PROCESSING') return
+
+  const poll = async () => {
+    try {
+      const latest = await jobApi.getJob(job.jobId)
+      translationJob.value = latest
+      if (latest.status === 'COMPLETED') {
+        stopTranslationJobPolling()
+        await subtitlesStore.init(numericVideoId.value, targetLanguage.value)
+        showTranslation.value = true
+        translationJob.value = null
+        return
+      }
+      if (latest.status === 'FAILED') {
+        stopTranslationJobPolling()
+        return
+      }
+      translationJobPollTimer = setTimeout(poll, 1500)
+    } catch {
+      stopTranslationJobPolling()
+    }
+  }
+
+  translationJobPollTimer = setTimeout(poll, 1500)
+}
+
+function syncActiveJobFromSubtitles() {
+  stopTranslationJobPolling()
+  const active = subtitlesStore.activeTranslationJob
+  translationJob.value = active
+  if (active && (active.status === 'PENDING' || active.status === 'PROCESSING')) {
+    startTranslationJobPolling(active)
+  }
+}
+
+async function onRequestTranslation() {
+  translationActionError.value = null
+  isSubmittingTranslationJob.value = true
+  try {
+    const job = await videoApi.requestTranslation(numericVideoId.value, targetLanguage.value)
+    startTranslationJobPolling(job)
+  } catch (error) {
+    translationActionError.value = toApiError(error).message
+  } finally {
+    isSubmittingTranslationJob.value = false
+  }
+}
+
+async function onRetryTranslationJob() {
+  if (!translationJob.value) return
+  translationActionError.value = null
+  isSubmittingTranslationJob.value = true
+  try {
+    const job = await jobApi.retryJob(translationJob.value.jobId)
+    startTranslationJobPolling(job)
+  } catch (error) {
+    translationActionError.value = toApiError(error).message
+  } finally {
+    isSubmittingTranslationJob.value = false
+  }
+}
 
 async function onTargetLanguageChange(event: Event) {
   const newLang = (event.target as HTMLSelectElement).value
   if (newLang === targetLanguage.value) return
+  stopTranslationJobPolling()
+  translationActionError.value = null
   await router.replace({ query: { ...route.query, lang: newLang } })
   watchSessionStore.setActive(numericVideoId.value, title.value, newLang)
   await subtitlesStore.init(numericVideoId.value, newLang)
+  syncActiveJobFromSubtitles()
 }
 
 // --- Hold (long-press) a line to reveal a small repeat icon in its top-right corner;
@@ -267,23 +349,26 @@ async function onDownload(mode: 'original' | 'translation' | 'bilingual') {
   }
 }
 
-// --- Reprocess: re-runs subtitle ingestion for this video so it picks up parser/chunking
-// fixes shipped after it was originally ingested (ingestion only ever runs once otherwise).
-// Reuses videoStore's existing polling + HomeView's redirect-on-READY, same as a fresh submit. ---
+// --- Reprocess: re-translates only the currently selected target language asynchronously
+// via RabbitMQ without re-fetching subtitles from YouTube. Keeps the user right here on
+// WatchView and refreshes translations automatically once COMPLETED. ---
 const isReprocessing = ref(false)
 const reprocessError = ref<string | null>(null)
 
 async function onReprocess() {
-  if (!window.confirm('Xử lý lại phụ đề cho video này bằng thuật toán mới nhất? Bạn sẽ được chuyển về trang chủ để theo dõi tiến trình.')) {
+  if (subtitlesStore.sameLanguage) return
+  const langName = languageLabel(targetLanguage.value)
+  if (!window.confirm(`Dịch lại toàn bộ bản dịch sang ${langName} cho video này?`)) {
     return
   }
   reprocessError.value = null
   isReprocessing.value = true
   try {
-    await videoStore.reprocess(numericVideoId.value)
-    router.push({ name: 'home' })
+    const job = await videoApi.reprocess(numericVideoId.value, targetLanguage.value)
+    startTranslationJobPolling(job)
   } catch (error) {
     reprocessError.value = toApiError(error).message
+  } finally {
     isReprocessing.value = false
   }
 }
@@ -318,6 +403,7 @@ onMounted(async () => {
     resumePositionMs.value = isNearEnd ? 0 : summary.lastPositionMs
     lastPersistedPositionMs = resumePositionMs.value
     await subtitlesStore.init(numericVideoId.value, targetLanguage.value)
+    syncActiveJobFromSubtitles()
 
     // Must flip this before onPlayerReady can ever fire: <YoutubePlayer> is gated behind
     // `v-else-if="youtubeVideoId"`, which never renders while `isLoading` is still true (the
@@ -338,6 +424,7 @@ onUnmounted(() => {
   if (iconPressTimer) clearTimeout(iconPressTimer)
   if (repeatLabelTimeout) clearTimeout(repeatLabelTimeout)
   if (progressSaveTimer) clearTimeout(progressSaveTimer)
+  stopTranslationJobPolling()
   if (Math.abs(currentTimeMs.value - lastPersistedPositionMs) >= 1000) {
     void videoApi.updateProgress(numericVideoId.value, currentTimeMs.value).catch(() => undefined)
   }
@@ -368,74 +455,131 @@ onUnmounted(() => {
       <div class="transcript-col">
         <div class="transcript-panel">
           <div class="transcript-toolbar">
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-              <button
-                class="btn btn-sm text-nowrap"
-                :class="showTranslation ? 'btn-primary' : 'btn-outline-primary'"
-                type="button"
-                :disabled="subtitlesStore.sameLanguage"
-                @click="showTranslation = !showTranslation"
-              >
-                {{ showTranslation ? '✓ Bản dịch' : 'Bản dịch' }}
-              </button>
-
-              <select
-                :value="targetLanguage"
-                class="form-select form-select-sm language-select"
-                aria-label="Chọn ngôn ngữ dịch"
-                @change="onTargetLanguageChange"
-              >
-                <option v-for="lang in TARGET_LANGUAGES" :key="lang.code" :value="lang.code">
-                  Dịch: {{ lang.label }}
-                </option>
-              </select>
-            </div>
-
-            <div class="download-menu">
-              <button
-                class="btn btn-outline-primary btn-sm"
-                type="button"
-                :disabled="isPreparingDownload"
-                @click="isDownloadMenuOpen = !isDownloadMenuOpen"
-              >
-                {{ isPreparingDownload ? 'Đang chuẩn bị...' : '⬇ Tải xuống' }}
-              </button>
-              <div v-if="isDownloadMenuOpen" class="download-menu__list">
-                <button class="download-menu__item" type="button" @click="onDownload('original')">Tải phụ đề</button>
+            <div class="transcript-toolbar__row">
+              <div class="transcript-toolbar__controls">
                 <button
-                  class="download-menu__item"
+                  class="btn-toggle-translation"
+                  :class="{ 'btn-toggle-translation--active': showTranslation }"
                   type="button"
-                  :disabled="subtitlesStore.sameLanguage"
-                  @click="onDownload('translation')"
+                  :disabled="subtitlesStore.sameLanguage || !subtitlesStore.translationAvailable"
+                  @click="showTranslation = !showTranslation"
                 >
-                  Tải bản dịch
+                  <span class="icon-bilingual" aria-hidden="true">文A</span>
+                  <span>Bản dịch</span>
                 </button>
+
+                <select
+                  :value="targetLanguage"
+                  class="form-select-lang"
+                  aria-label="Chọn ngôn ngữ dịch"
+                  @change="onTargetLanguageChange"
+                >
+                  <option v-for="lang in TARGET_LANGUAGES" :key="lang.code" :value="lang.code">
+                    {{ lang.label }}
+                  </option>
+                </select>
+              </div>
+
+              <div class="download-menu">
                 <button
-                  class="download-menu__item"
+                  class="btn-download-primary"
                   type="button"
-                  :disabled="subtitlesStore.sameLanguage"
-                  @click="onDownload('bilingual')"
+                  :disabled="isPreparingDownload"
+                  @click="isDownloadMenuOpen = !isDownloadMenuOpen"
                 >
-                  Tải phụ đề song ngữ
+                  <svg class="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 3v13m0 0l-4-4m4 4l4-4M4 20h16"/>
+                  </svg>
+                  <span>{{ isPreparingDownload ? 'Đang chuẩn bị...' : 'Tải xuống' }}</span>
                 </button>
+                <div v-if="isDownloadMenuOpen" class="download-menu__list">
+                  <button class="download-menu__item" type="button" @click="onDownload('original')">Tải phụ đề</button>
+                  <button
+                    class="download-menu__item"
+                    type="button"
+                    :disabled="subtitlesStore.sameLanguage"
+                    @click="onDownload('translation')"
+                  >
+                    Tải bản dịch
+                  </button>
+                  <button
+                    class="download-menu__item"
+                    type="button"
+                    :disabled="subtitlesStore.sameLanguage"
+                    @click="onDownload('bilingual')"
+                  >
+                    Tải phụ đề song ngữ
+                  </button>
+                </div>
               </div>
             </div>
 
+            <div class="transcript-toolbar__row transcript-toolbar__row--secondary">
+              <button
+                class="btn-ghost-action"
+                type="button"
+                :disabled="isReprocessing || isTranslationJobActive || subtitlesStore.sameLanguage"
+                title="Dịch lại bản dịch cho ngôn ngữ đang chọn (không tải lại phụ đề gốc)"
+                @click="onReprocess"
+              >
+                <svg class="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                  <path d="M21 3v5h-5"/>
+                  <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                  <path d="M3 21v-5h5"/>
+                </svg>
+                <span>{{ isReprocessing || isTranslationJobActive ? 'Đang dịch...' : 'Dịch lại phụ đề' }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div v-if="reprocessError || translationActionError" class="alert alert-danger py-1 px-2 small mx-2 mt-2 mb-0">
+            {{ reprocessError || translationActionError }}
+          </div>
+
+          <div v-if="isTranslationJobActive && translationJob" class="translation-banner translation-banner--progress">
+            <div class="d-flex justify-content-between align-items-center small fw-semibold mb-1">
+              <span>
+                Đang dịch phụ đề sang {{ languageLabel(targetLanguage) }}...
+                <template v-if="translationJob.retryCount > 0">
+                  (thử lại {{ translationJob.retryCount }}/{{ translationJob.maxRetries }})
+                </template>
+              </span>
+              <span>{{ translationJob.progressPercent }}%</span>
+            </div>
+            <div class="translation-progress-track">
+              <div class="translation-progress-fill" :style="{ width: `${translationJob.progressPercent}%` }"></div>
+            </div>
+          </div>
+
+          <div
+            v-else-if="!subtitlesStore.sameLanguage && translationJob?.status === 'FAILED'"
+            class="translation-banner translation-banner--error"
+          >
+            <span>Có lỗi khi dịch phụ đề sang {{ languageLabel(targetLanguage) }}! Vui lòng thử lại.</span>
             <button
-              class="btn btn-outline-secondary btn-sm"
+              class="btn btn-sm btn-outline-danger text-nowrap"
               type="button"
-              :disabled="isReprocessing"
-              title="Cắt lại phụ đề bằng thuật toán mới nhất (dùng khi phụ đề bị mất dấu câu hoặc cắt dòng chưa hợp lý)"
-              @click="onReprocess"
+              :disabled="isSubmittingTranslationJob"
+              @click="onRetryTranslationJob"
             >
-              {{ isReprocessing ? 'Đang gửi yêu cầu...' : '⟳ Xử lý lại phụ đề' }}
+              {{ isSubmittingTranslationJob ? 'Đang gửi...' : '⟳ Thử dịch lại' }}
             </button>
           </div>
 
-          <div v-if="reprocessError" class="alert alert-danger py-1 px-2 small mx-2 mb-0">{{ reprocessError }}</div>
-
-          <div v-if="showTranslation && subtitlesStore.translationUnavailable" class="translation-warning">
-            ⚠ Dịch vụ dịch tạm thời không khả dụng (có thể do vượt giới hạn sử dụng). Đang hiển thị tạm bản gốc thay cho bản dịch.
+          <div
+            v-else-if="!subtitlesStore.sameLanguage && !subtitlesStore.translationAvailable"
+            class="translation-banner translation-banner--missing"
+          >
+            <span>Chưa có bản dịch cho <strong>{{ languageLabel(targetLanguage) }}</strong>.</span>
+            <button
+              class="btn btn-sm btn-primary text-nowrap"
+              type="button"
+              :disabled="isSubmittingTranslationJob"
+              @click="onRequestTranslation"
+            >
+              {{ isSubmittingTranslationJob ? 'Đang gửi...' : `Dịch sang ${languageLabel(targetLanguage)}` }}
+            </button>
           </div>
 
           <div ref="transcriptEl" class="transcript-scroll" @scroll="onTranscriptScroll">
@@ -536,25 +680,221 @@ onUnmounted(() => {
 
 .transcript-toolbar {
   display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.85rem;
+  border-bottom: 1px solid var(--brand-border);
+}
+
+.transcript-toolbar__row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
   gap: 0.5rem;
-  padding: 0.75rem 0.75rem 0;
+  flex-wrap: wrap;
+}
+
+.transcript-toolbar__row--secondary {
+  justify-content: flex-start;
+}
+
+.transcript-toolbar__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn-toggle-translation {
+  height: 36px;
+  padding: 0 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #dcdfe4;
+  background: #ffffff;
+  color: #4a5568;
+  font-size: 0.875rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.btn-toggle-translation:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.btn-toggle-translation--active {
+  background: var(--brand-green-light);
+  border: 1px solid var(--brand-green);
+  color: var(--brand-green-dark);
+}
+
+.btn-toggle-translation--active:hover:not(:disabled) {
+  background: #dbf4e7;
+  border-color: var(--brand-green);
+}
+
+.btn-toggle-translation:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon-bilingual {
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(31, 178, 122, 0.18);
+  color: var(--brand-green-dark);
+  padding: 2px 5px;
+  border-radius: 4px;
+  line-height: 1;
+  letter-spacing: -0.5px;
+}
+
+.form-select-lang {
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #dcdfe4;
+  background-color: #ffffff;
+  color: #2d3748;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0 2rem 0 0.75rem;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%234a5568' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  background-size: 11px 9px;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-select-lang:focus {
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 2px rgba(31, 178, 122, 0.18);
+}
+
+.btn-download-primary {
+  height: 36px;
+  padding: 0 0.85rem;
+  border-radius: 8px;
+  background: var(--brand-green);
+  border: 1px solid var(--brand-green);
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+}
+
+.btn-download-primary:hover:not(:disabled) {
+  background: var(--brand-green-dark);
+  border-color: var(--brand-green-dark);
+}
+
+.btn-download-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-ghost-action {
+  height: 34px;
+  padding: 0 0.65rem;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #dcdfe4;
+  color: #4a5568;
+  font-size: 0.825rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.btn-ghost-action:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #1f2937;
+}
+
+.btn-ghost-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
 }
 
 .language-select {
   width: auto;
 }
 
-.translation-warning {
+.translation-banner {
   margin: 0.5rem 0.75rem 0;
-  padding: 0.5rem 0.75rem;
-  background: #fff7e6;
-  border: 1px solid #f5c065;
-  border-radius: var(--brand-radius-sm);
-  color: #7a5200;
-  font-size: 0.8rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.84rem;
+}
+
+.translation-banner .btn {
+  border-radius: 8px;
+}
+
+.translation-banner--progress {
+  background: var(--brand-green-light);
+  border: 1px solid var(--brand-green);
+  color: var(--brand-green-dark);
+}
+
+.translation-banner--missing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  background: #f8fafc;
+  border: 1px solid var(--brand-border);
+}
+
+.translation-banner--error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  background: #fff5f5;
+  border: 1px solid #f5b5b5;
+  color: #9b1c1c;
+}
+
+.translation-progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(31, 178, 122, 0.2);
+  overflow: hidden;
+}
+
+.translation-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--brand-green);
+  transition: width 0.3s ease;
 }
 
 .download-menu {
@@ -567,10 +907,11 @@ onUnmounted(() => {
   top: calc(100% + 0.25rem);
   background: #fff;
   border: 1px solid var(--brand-border);
-  border-radius: var(--brand-radius-sm);
-  box-shadow: var(--brand-shadow);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(31, 45, 61, 0.12);
   z-index: 10;
   min-width: 180px;
+  padding: 4px;
   overflow: hidden;
 }
 
@@ -581,11 +922,15 @@ onUnmounted(() => {
   padding: 0.5rem 0.85rem;
   background: none;
   border: none;
-  font-size: 0.9rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: #2d3748;
+  cursor: pointer;
 }
 
 .download-menu__item:hover:not(:disabled) {
   background: var(--brand-bg);
+  color: var(--brand-green-dark);
 }
 
 .download-menu__item:disabled {
@@ -669,7 +1014,9 @@ onUnmounted(() => {
   z-index: 5;
   margin: 0 auto 0.5rem;
   display: block;
-  border-radius: 999px;
+  border-radius: 8px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(31, 178, 122, 0.3);
 }
 
 @media (max-width: 900px) {

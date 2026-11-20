@@ -2,12 +2,14 @@ package org.example.sublearn.video;
 
 import org.example.sublearn.common.ApiException;
 import org.example.sublearn.domain.AppUser;
+import org.example.sublearn.domain.JobType;
 import org.example.sublearn.domain.Video;
 import org.example.sublearn.domain.VideoStatus;
 import org.example.sublearn.domain.VideoWatchHistory;
-import org.example.sublearn.ingestion.VideoIngestionService;
 import org.example.sublearn.ingestion.VideoProgressTracker;
 import org.example.sublearn.ingestion.YouTubeUrlParser;
+import org.example.sublearn.job.ProcessingJobResponse;
+import org.example.sublearn.job.ProcessingJobService;
 import org.example.sublearn.repository.AppUserRepository;
 import org.example.sublearn.repository.VideoRepository;
 import org.example.sublearn.repository.VideoWatchHistoryRepository;
@@ -18,8 +20,6 @@ import org.example.sublearn.video.dto.VideoSubmitResponse;
 import org.example.sublearn.video.dto.VideoSummaryResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -34,22 +34,23 @@ public class VideoService {
     private final VideoRepository videoRepository;
     private final AppUserRepository appUserRepository;
     private final YouTubeUrlParser youTubeUrlParser;
-    private final VideoIngestionService videoIngestionService;
     private final VideoProgressTracker progressTracker;
     private final VideoWatchHistoryRepository videoWatchHistoryRepository;
     private final VideoLibraryService videoLibraryService;
+    private final ProcessingJobService processingJobService;
 
     public VideoService(VideoRepository videoRepository, AppUserRepository appUserRepository,
-                         YouTubeUrlParser youTubeUrlParser, VideoIngestionService videoIngestionService,
-                         VideoProgressTracker progressTracker, VideoWatchHistoryRepository videoWatchHistoryRepository,
-                         VideoLibraryService videoLibraryService) {
+                         YouTubeUrlParser youTubeUrlParser, VideoProgressTracker progressTracker,
+                         VideoWatchHistoryRepository videoWatchHistoryRepository,
+                         VideoLibraryService videoLibraryService,
+                         ProcessingJobService processingJobService) {
         this.videoRepository = videoRepository;
         this.appUserRepository = appUserRepository;
         this.youTubeUrlParser = youTubeUrlParser;
-        this.videoIngestionService = videoIngestionService;
         this.progressTracker = progressTracker;
         this.videoWatchHistoryRepository = videoWatchHistoryRepository;
         this.videoLibraryService = videoLibraryService;
+        this.processingJobService = processingJobService;
     }
 
     @Transactional
@@ -66,8 +67,12 @@ public class VideoService {
         if (video != null && ACTIVE_STATUSES.contains(video.getStatus())) {
             if (video.getStatus() == VideoStatus.READY) {
                 videoLibraryService.addToLibrary(userId, video);
+                return new VideoSubmitResponse(video.getId(), video.getStatus(), null);
             }
-            return new VideoSubmitResponse(video.getId(), video.getStatus());
+            Long existingJobId = processingJobService.findLatestIngestJob(video.getId())
+                    .map(ProcessingJobResponse::jobId)
+                    .orElse(null);
+            return new VideoSubmitResponse(video.getId(), video.getStatus(), existingJobId);
         }
 
         if (video == null) {
@@ -75,39 +80,40 @@ public class VideoService {
             video = new Video(youtubeVideoId, youtubeUrl, requestedBy);
             videoRepository.save(video);
         } else {
-            // previous attempt FAILED - reset and retry
+            // previous attempt FAILED - reset and enqueue a fresh ingestion job
             video.setStatus(VideoStatus.PENDING);
         }
 
-        Long videoId = video.getId();
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    videoIngestionService.ingest(videoId, youtubeVideoId, sourceLanguage, targetLanguage, userId);
-                }
-            });
-        } else {
-            videoIngestionService.ingest(videoId, youtubeVideoId, sourceLanguage, targetLanguage, userId);
-        }
-        return new VideoSubmitResponse(video.getId(), video.getStatus());
+        ProcessingJobResponse job = processingJobService.createAndEnqueue(
+                video, userId, JobType.INGEST_VIDEO, sourceLanguage, targetLanguage);
+        return new VideoSubmitResponse(video.getId(), video.getStatus(), job.jobId());
     }
 
     @Transactional(readOnly = true)
     public VideoStatusResponse getStatus(Long videoId) {
         Video video = getVideo(videoId);
-        // While actively saving lines, the authoritative processedLines/percent live only in
-        // VideoProgressTracker's in-memory map (see its javadoc) - the video row's own
-        // columns aren't touched again until the whole line-saving transaction commits.
         Integer processedLines = video.getStatus() == VideoStatus.PROCESSING
                 ? progressTracker.liveProcessedLines(videoId).orElse(video.getProcessedLines())
                 : video.getProcessedLines();
         int progressPercent = video.getStatus() == VideoStatus.PROCESSING
                 ? progressTracker.liveProgressPercent(videoId).orElse(video.getProgressPercent())
                 : video.getProgressPercent();
-        return new VideoStatusResponse(video.getStatus(), video.getFailureReason(), video.getFailureMessage(),
-                video.getTitle(), video.getSourceLanguage(), video.getDurationSeconds(), video.getYoutubeVideoId(),
-                video.getTotalLines(), processedLines, progressPercent);
+        ProcessingJobResponse latestJob = processingJobService.findLatestIngestJob(videoId).orElse(null);
+        return new VideoStatusResponse(
+                video.getStatus(),
+                video.getFailureReason(),
+                video.getFailureMessage(),
+                video.getTitle(),
+                video.getSourceLanguage(),
+                video.getDurationSeconds(),
+                video.getYoutubeVideoId(),
+                video.getTotalLines(),
+                processedLines,
+                progressPercent,
+                latestJob != null ? latestJob.jobId() : null,
+                latestJob != null ? latestJob.retryCount() : null,
+                latestJob != null ? latestJob.maxRetries() : null
+        );
     }
 
     @Transactional(readOnly = true)
@@ -124,40 +130,42 @@ public class VideoService {
     }
 
     /**
-     * Re-runs ingestion for a video that already finished (successfully or not) at least
-     * once, picking up any ingestion-logic changes since then (e.g. a subtitle-chunking fix)
-     * that a code deploy alone can't retroactively apply - {@link #submitVideo} intentionally
-     * short-circuits on an already-{@code READY} video to avoid redundant work, so this is the
-     * only path back into ingestion for one. Old subtitle lines are cleared as part of the
-     * next {@code markProcessing} call (see its javadoc), not here, so this stays a fast,
-     * effectively single-column update.
+     * Enqueues an asynchronous translation job for a new target language on an already-READY video.
      */
     @Transactional
-    public VideoSubmitResponse reprocess(Long videoId) {
+    public ProcessingJobResponse requestTranslation(Long videoId, String targetLanguage, Long userId) {
         Video video = getVideo(videoId);
-        if (video.getStatus() == VideoStatus.PENDING || video.getStatus() == VideoStatus.PROCESSING) {
-            return new VideoSubmitResponse(video.getId(), video.getStatus());
+        if (video.getStatus() != VideoStatus.READY) {
+            throw ApiException.conflict("VIDEO_NOT_READY", "Video is not ready yet (status: " + video.getStatus() + ")");
         }
-        if (video.getSourceLanguage() == null) {
-            throw ApiException.conflict("VIDEO_NEVER_INGESTED",
-                    "This video has never finished ingestion, so there is nothing to reprocess - submit it instead");
+        if (targetLanguage == null || targetLanguage.isBlank()) {
+            throw ApiException.badRequest("INVALID_TARGET_LANGUAGE", "Target language is required");
         }
-        String sourceLanguage = video.getSourceLanguage();
-        String youtubeVideoId = video.getYoutubeVideoId();
-        video.setStatus(VideoStatus.PENDING);
+        if (targetLanguage.equalsIgnoreCase(video.getSourceLanguage())) {
+            throw ApiException.badRequest("SAME_LANGUAGE", "Target language matches the video's source language");
+        }
+        return processingJobService.createAndEnqueue(
+                video, userId, JobType.TRANSLATE_SUBTITLES, video.getSourceLanguage(), targetLanguage);
+    }
 
-        Long id = video.getId();
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    videoIngestionService.ingest(id, youtubeVideoId, sourceLanguage);
-                }
-            });
-        } else {
-            videoIngestionService.ingest(id, youtubeVideoId, sourceLanguage);
+    /**
+     * Enqueues an asynchronous re-translation job for the selected target language only,
+     * reusing the persisted subtitle lines without re-fetching from YouTube.
+     */
+    @Transactional
+    public ProcessingJobResponse reprocess(Long videoId, String targetLanguage, Long userId) {
+        Video video = getVideo(videoId);
+        if (video.getStatus() != VideoStatus.READY) {
+            throw ApiException.conflict("VIDEO_NOT_READY", "Video is not ready yet (status: " + video.getStatus() + ")");
         }
-        return new VideoSubmitResponse(video.getId(), video.getStatus());
+        if (targetLanguage == null || targetLanguage.isBlank()) {
+            throw ApiException.badRequest("INVALID_TARGET_LANGUAGE", "Target language is required for reprocessing translation");
+        }
+        if (targetLanguage.equalsIgnoreCase(video.getSourceLanguage())) {
+            throw ApiException.badRequest("SAME_LANGUAGE", "Target language matches the video's source language");
+        }
+        return processingJobService.createAndEnqueue(
+                video, userId, JobType.RETRANSLATE_SUBTITLES, video.getSourceLanguage(), targetLanguage);
     }
 
     @Transactional

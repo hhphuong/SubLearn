@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { videoApi } from '@/api/video.api'
+import { jobApi } from '@/api/job.api'
 import type { FailureReason, VideoStatus } from '@/types/api'
 
 const POLL_INTERVAL_MS = 1500
@@ -8,6 +9,7 @@ const MAX_POLL_DURATION_MS = 5 * 60 * 1000
 
 export const useVideoStore = defineStore('video', () => {
   const videoId = ref<number | null>(null)
+  const jobId = ref<number | null>(null)
   const status = ref<VideoStatus | null>(null)
   const failureReason = ref<FailureReason | null>(null)
   const failureMessage = ref<string | null>(null)
@@ -18,6 +20,8 @@ export const useVideoStore = defineStore('video', () => {
   const totalLines = ref<number | null>(null)
   const processedLines = ref<number | null>(null)
   const progressPercent = ref<number | null>(null)
+  const retryCount = ref<number | null>(null)
+  const maxRetries = ref<number | null>(null)
   const isPolling = ref(false)
   const clientTimedOut = ref(false)
 
@@ -35,6 +39,9 @@ export const useVideoStore = defineStore('video', () => {
     totalLines: number | null
     processedLines: number | null
     progressPercent: number | null
+    jobId?: number | null
+    retryCount?: number | null
+    maxRetries?: number | null
   }) {
     status.value = response.status
     failureReason.value = response.failureReason
@@ -46,6 +53,9 @@ export const useVideoStore = defineStore('video', () => {
     totalLines.value = response.totalLines
     processedLines.value = response.processedLines
     progressPercent.value = response.progressPercent
+    if (response.jobId !== undefined) jobId.value = response.jobId
+    if (response.retryCount !== undefined) retryCount.value = response.retryCount
+    if (response.maxRetries !== undefined) maxRetries.value = response.maxRetries
   }
 
   async function fetchStatus(id: number) {
@@ -94,12 +104,24 @@ export const useVideoStore = defineStore('video', () => {
   async function submit(youtubeUrl: string, sourceLanguage: string, targetLanguage?: string) {
     reset()
     const response = await videoApi.submit(youtubeUrl, sourceLanguage, targetLanguage)
-    trackSubmission(response.videoId, response.status)
+    trackSubmission(response.videoId, response.status, response.jobId ?? null)
   }
 
-  /** Shared by both a brand-new submission and re-tracking an existing video's reprocess run. */
-  function trackSubmission(id: number, initialStatus: VideoStatus) {
+  async function retryCurrentJob() {
+    if (!jobId.value || !videoId.value) return
+    const currentVideoId = videoId.value
+    const response = await jobApi.retryJob(jobId.value)
+    failureReason.value = null
+    failureMessage.value = null
+    retryCount.value = response.retryCount
+    maxRetries.value = response.maxRetries
+    progressPercent.value = response.progressPercent
+    trackSubmission(currentVideoId, 'PENDING', response.jobId)
+  }
+
+  function trackSubmission(id: number, initialStatus: VideoStatus, initialJobId: number | null = null) {
     videoId.value = id
+    jobId.value = initialJobId
     status.value = initialStatus
     if (initialStatus === 'READY' || initialStatus === 'FAILED') {
       void fetchStatus(id)
@@ -108,15 +130,10 @@ export const useVideoStore = defineStore('video', () => {
     }
   }
 
-  async function reprocess(id: number) {
-    reset()
-    const response = await videoApi.reprocess(id)
-    trackSubmission(response.videoId, response.status)
-  }
-
   function reset() {
     stopPolling()
     videoId.value = null
+    jobId.value = null
     status.value = null
     failureReason.value = null
     failureMessage.value = null
@@ -127,11 +144,14 @@ export const useVideoStore = defineStore('video', () => {
     totalLines.value = null
     processedLines.value = null
     progressPercent.value = null
+    retryCount.value = null
+    maxRetries.value = null
     clientTimedOut.value = false
   }
 
   return {
     videoId,
+    jobId,
     status,
     failureReason,
     failureMessage,
@@ -142,10 +162,12 @@ export const useVideoStore = defineStore('video', () => {
     totalLines,
     processedLines,
     progressPercent,
+    retryCount,
+    maxRetries,
     isPolling,
     clientTimedOut,
     submit,
-    reprocess,
+    retryCurrentJob,
     fetchStatus,
     startPolling,
     stopPolling,
