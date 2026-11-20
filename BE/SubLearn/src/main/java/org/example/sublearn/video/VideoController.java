@@ -35,7 +35,7 @@ public class VideoController {
     @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
     public VideoSubmitResponse submit(@Valid @RequestBody VideoSubmitRequest request, @AuthenticationPrincipal Long userId) {
-        return videoService.submitVideo(request.youtubeUrl(), request.sourceLanguage(), userId);
+        return videoService.submitVideo(request.youtubeUrl(), request.sourceLanguage(), request.targetLanguage(), userId);
     }
 
     // Registered before "/{videoId}" so this literal path always wins over the path-variable

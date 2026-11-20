@@ -8,8 +8,8 @@ import type {
 } from '@/types/api'
 
 export const videoApi = {
-  submit(youtubeUrl: string, sourceLanguage: string) {
-    return http.post<VideoSubmitResponse>('/api/videos', { youtubeUrl, sourceLanguage }).then((r) => r.data)
+  submit(youtubeUrl: string, sourceLanguage: string, targetLanguage?: string) {
+    return http.post<VideoSubmitResponse>('/api/videos', { youtubeUrl, sourceLanguage, targetLanguage }).then((r) => r.data)
   },
   getStatus(videoId: number) {
     return http.get<VideoStatusResponse>(`/api/videos/${videoId}/status`).then((r) => r.data)

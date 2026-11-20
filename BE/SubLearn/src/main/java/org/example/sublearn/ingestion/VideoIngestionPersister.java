@@ -3,6 +3,7 @@ package org.example.sublearn.ingestion;
 import org.example.sublearn.common.ApiException;
 import org.example.sublearn.domain.FailureReason;
 import org.example.sublearn.domain.SubtitleLine;
+import org.example.sublearn.domain.SubtitleLineTranslation;
 import org.example.sublearn.domain.SubtitleToken;
 import org.example.sublearn.domain.Video;
 import org.example.sublearn.domain.VideoStatus;
@@ -10,8 +11,10 @@ import org.example.sublearn.nlp.TokenSpan;
 import org.example.sublearn.nlp.Tokenizer;
 import org.example.sublearn.nlp.TokenizerFactory;
 import org.example.sublearn.repository.SubtitleLineRepository;
+import org.example.sublearn.repository.SubtitleLineTranslationRepository;
 import org.example.sublearn.repository.SubtitleTokenRepository;
 import org.example.sublearn.repository.VideoRepository;
+import org.example.sublearn.video.VideoLibraryService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,17 +35,24 @@ public class VideoIngestionPersister {
     private final VideoRepository videoRepository;
     private final SubtitleLineRepository subtitleLineRepository;
     private final SubtitleTokenRepository subtitleTokenRepository;
+    private final SubtitleLineTranslationRepository subtitleLineTranslationRepository;
     private final TokenizerFactory tokenizerFactory;
     private final VideoProgressTracker progressTracker;
+    private final VideoLibraryService videoLibraryService;
 
     public VideoIngestionPersister(VideoRepository videoRepository, SubtitleLineRepository subtitleLineRepository,
-                                    SubtitleTokenRepository subtitleTokenRepository, TokenizerFactory tokenizerFactory,
-                                    VideoProgressTracker progressTracker) {
+                                    SubtitleTokenRepository subtitleTokenRepository,
+                                    SubtitleLineTranslationRepository subtitleLineTranslationRepository,
+                                    TokenizerFactory tokenizerFactory,
+                                    VideoProgressTracker progressTracker,
+                                    VideoLibraryService videoLibraryService) {
         this.videoRepository = videoRepository;
         this.subtitleLineRepository = subtitleLineRepository;
         this.subtitleTokenRepository = subtitleTokenRepository;
+        this.subtitleLineTranslationRepository = subtitleLineTranslationRepository;
         this.tokenizerFactory = tokenizerFactory;
         this.progressTracker = progressTracker;
+        this.videoLibraryService = videoLibraryService;
     }
 
     /**
@@ -61,22 +71,35 @@ public class VideoIngestionPersister {
         progressTracker.clear(videoId);
     }
 
+    @Transactional
+    public void persistLines(Long videoId, String sourceLanguage, List<VttCue> cues) {
+        persistLines(videoId, sourceLanguage, cues, null, null);
+    }
+
     /**
-     * Persists subtitle lines/tokens only. {@code subtitle_line.video_id} is a foreign key,
-     * so every insert here takes an implicit InnoDB shared lock on the referenced
-     * {@code video} row for the lifetime of this transaction - see
-     * {@link VideoProgressTracker}'s javadoc for why per-line progress is tracked in memory
+     * Persists subtitle lines, tokens, and optional pre-translated lines in one transaction.
+     * {@code subtitle_line.video_id} is a foreign key, so every insert here takes an implicit
+     * InnoDB shared lock on the referenced {@code video} row for the lifetime of this transaction
+     * - see {@link VideoProgressTracker}'s javadoc for why per-line progress is tracked in memory
      * instead of written to that row from inside this loop.
      */
     @Transactional
-    public void persistLines(Long videoId, String sourceLanguage, List<VttCue> cues) {
+    public void persistLines(Long videoId, String sourceLanguage, List<VttCue> cues,
+                             String targetLanguage, List<String> translatedTexts) {
         Video video = getVideo(videoId);
         Tokenizer tokenizer = tokenizerFactory.get(sourceLanguage);
+        boolean saveTranslations = targetLanguage != null && !targetLanguage.isBlank()
+                && translatedTexts != null && translatedTexts.size() == cues.size();
         int sequence = 0;
         int processed = 0;
-        for (VttCue cue : cues) {
+        for (int i = 0; i < cues.size(); i++) {
+            VttCue cue = cues.get(i);
             SubtitleLine line = new SubtitleLine(video, sequence++, cue.startMs(), cue.endMs(), cue.text());
             subtitleLineRepository.save(line);
+
+            if (saveTranslations) {
+                subtitleLineTranslationRepository.save(new SubtitleLineTranslation(line, targetLanguage, translatedTexts.get(i)));
+            }
 
             List<TokenSpan> spans = tokenizer.tokenize(cue.text());
             int tokenSequence = 0;
@@ -96,13 +119,24 @@ public class VideoIngestionPersister {
 
     @Transactional
     public void markReady(Long videoId) {
-        getVideo(videoId).markReady();
+        markReady(videoId, null);
+    }
+
+    @Transactional
+    public void markReady(Long videoId, Long requestedByUserId) {
+        Video video = getVideo(videoId);
+        video.markReady();
+        if (requestedByUserId != null) {
+            videoLibraryService.addToLibrary(requestedByUserId, video);
+        }
         progressTracker.clear(videoId);
     }
 
     @Transactional
     public void markFailed(Long videoId, FailureReason reason, String message) {
-        getVideo(videoId).markFailed(reason, message);
+        Video video = getVideo(videoId);
+        subtitleLineRepository.deleteByVideo(video);
+        video.markFailed(reason, message);
         progressTracker.clear(videoId);
     }
 

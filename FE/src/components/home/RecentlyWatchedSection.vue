@@ -2,7 +2,7 @@
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVideoHistoryStore } from '@/stores/videoHistory.store'
-import { languageLabel } from '@/utils/languages'
+import { DEFAULT_TARGET_LANGUAGE_CODE, languageLabel } from '@/utils/languages'
 import type { VideoHistoryEntryResponse } from '@/types/api'
 
 const router = useRouter()
@@ -38,7 +38,11 @@ function formatRelativeTime(iso: string) {
 }
 
 function openVideo(entry: VideoHistoryEntryResponse) {
-  router.push({ name: 'watch', params: { videoId: entry.videoId } })
+  router.push({
+    name: 'watch',
+    params: { videoId: entry.videoId },
+    query: { lang: DEFAULT_TARGET_LANGUAGE_CODE },
+  })
 }
 
 function goToPage(newPage: number) {

@@ -21,6 +21,10 @@ interface YoutubePlayerConstructor {
     elementId: string,
     options: {
       videoId: string
+      playerVars?: {
+        origin?: string
+        rel?: number
+      }
       events: {
         onReady: () => void
         onStateChange: (event: YoutubePlayerStateChangeEvent) => void
@@ -92,6 +96,10 @@ export function useYoutubePlayer(elementId: string, videoId: string) {
     if (!window.YT) return
     player.value = new window.YT.Player(elementId, {
       videoId,
+      playerVars: {
+        origin: window.location.origin,
+        rel: 0,
+      },
       events: {
         onReady: () => {
           isReady.value = true

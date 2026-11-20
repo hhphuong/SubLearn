@@ -61,6 +61,24 @@ class GeminiClientTest {
         assertEquals(1, result.examples().size());
     }
 
+    @Test
+    void blankApiKeyFailsFastWithoutCallingGemini() {
+        AtomicInteger callCount = new AtomicInteger();
+        ClientHttpRequestInterceptor counter = (request, body, execution) -> {
+            callCount.incrementAndGet();
+            return new MockClientHttpResponse(new byte[0], HttpStatus.OK);
+        };
+        RestClient restClient = RestClient.builder()
+                .baseUrl("http://localhost")
+                .requestInterceptor(counter)
+                .build();
+        GeminiClient client = new GeminiClient(restClient, "   ", "gemini-test", new ObjectMapper());
+
+        assertThrows(GeminiUnavailableException.class,
+                () -> client.translateLines(java.util.List.of("Hello"), "en", "vi"));
+        assertEquals(0, callCount.get());
+    }
+
     private String toJsonStringLiteral(String raw) {
         return "\"" + raw.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }

@@ -3,7 +3,6 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVideoStore } from '@/stores/video.store'
 import { useWatchSessionStore } from '@/stores/watchSession.store'
-import { toApiError } from '@/api/errors'
 import RecentlyWatchedSection from '@/components/home/RecentlyWatchedSection.vue'
 import {
   DEFAULT_SOURCE_LANGUAGE_CODE,
@@ -11,7 +10,7 @@ import {
   SOURCE_LANGUAGES,
   TARGET_LANGUAGES,
 } from '@/utils/languages'
-import { failureMessage } from '@/utils/failureMessages'
+import { VIDEO_CREATE_ERROR_MESSAGE, failureMessage } from '@/utils/failureMessages'
 
 const router = useRouter()
 const videoStore = useVideoStore()
@@ -37,9 +36,9 @@ async function onSubmit() {
   try {
     // submit() resets any previous video's state before starting the new one - the only
     // place this store is meant to be cleared from besides a hard refresh (see note below).
-    await videoStore.submit(youtubeUrl.value, sourceLanguage.value)
-  } catch (error) {
-    submitError.value = toApiError(error).message
+    await videoStore.submit(youtubeUrl.value, sourceLanguage.value, targetLanguage.value)
+  } catch {
+    submitError.value = VIDEO_CREATE_ERROR_MESSAGE
   } finally {
     isSubmitting.value = false
   }
@@ -133,7 +132,7 @@ onUnmounted(() => {
       </form>
 
       <div v-if="submitError" class="alert alert-danger py-2 mt-2 mb-0">{{ submitError }}</div>
-      <div v-if="videoStore.status === 'FAILED'" class="alert alert-warning py-2 mt-2 mb-0">
+      <div v-if="videoStore.status === 'FAILED'" class="alert alert-danger py-2 mt-2 mb-0">
         {{ failureMessage(videoStore.failureReason) }}
       </div>
 

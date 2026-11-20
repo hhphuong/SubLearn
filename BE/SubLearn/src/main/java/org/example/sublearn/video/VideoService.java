@@ -54,12 +54,19 @@ public class VideoService {
 
     @Transactional
     public VideoSubmitResponse submitVideo(String youtubeUrl, String sourceLanguage, Long userId) {
+        return submitVideo(youtubeUrl, sourceLanguage, null, userId);
+    }
+
+    @Transactional
+    public VideoSubmitResponse submitVideo(String youtubeUrl, String sourceLanguage, String targetLanguage, Long userId) {
         String youtubeVideoId = youTubeUrlParser.extractVideoId(youtubeUrl)
                 .orElseThrow(() -> ApiException.badRequest("INVALID_URL", "This does not look like a valid YouTube video URL"));
 
         Video video = videoRepository.findByYoutubeVideoId(youtubeVideoId).orElse(null);
         if (video != null && ACTIVE_STATUSES.contains(video.getStatus())) {
-            videoLibraryService.addToLibrary(userId, video);
+            if (video.getStatus() == VideoStatus.READY) {
+                videoLibraryService.addToLibrary(userId, video);
+            }
             return new VideoSubmitResponse(video.getId(), video.getStatus());
         }
 
@@ -71,18 +78,17 @@ public class VideoService {
             // previous attempt FAILED - reset and retry
             video.setStatus(VideoStatus.PENDING);
         }
-        videoLibraryService.addToLibrary(userId, video);
 
         Long videoId = video.getId();
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    videoIngestionService.ingest(videoId, youtubeVideoId, sourceLanguage);
+                    videoIngestionService.ingest(videoId, youtubeVideoId, sourceLanguage, targetLanguage, userId);
                 }
             });
         } else {
-            videoIngestionService.ingest(videoId, youtubeVideoId, sourceLanguage);
+            videoIngestionService.ingest(videoId, youtubeVideoId, sourceLanguage, targetLanguage, userId);
         }
         return new VideoSubmitResponse(video.getId(), video.getStatus());
     }

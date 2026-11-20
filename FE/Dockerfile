@@ -7,10 +7,9 @@ RUN npm ci
 
 COPY . .
 
-# Vite bakes VITE_* env vars in at build time, not runtime - override with
-# --build-arg VITE_API_BASE_URL=... if the backend isn't reachable at localhost:8080
-# from the browser.
-ARG VITE_API_BASE_URL=http://localhost:8080
+# Vite bakes VITE_* env vars in at build time, not runtime. Empty = same-origin
+# (/api/... is proxied to the backend by nginx.conf).
+ARG VITE_API_BASE_URL=
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 RUN npm run build
 

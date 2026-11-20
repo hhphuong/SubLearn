@@ -73,6 +73,9 @@ public class GeminiClient {
     }
 
     private String callGemini(String prompt) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new GeminiUnavailableException("Gemini API key is not configured");
+        }
         Map<String, Object> body = Map.of(
                 "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
                 "generationConfig", Map.of("responseMimeType", "application/json"));

@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public record VideoSubmitRequest(
         @NotBlank String youtubeUrl,
-        @NotBlank String sourceLanguage
+        @NotBlank String sourceLanguage,
+        String targetLanguage
 ) {
 }

@@ -10,6 +10,7 @@ import YoutubePlayer from '@/components/watch/YoutubePlayer.vue'
 import SubtitleLine from '@/components/watch/SubtitleLine.vue'
 import WordPopup from '@/components/watch/WordPopup.vue'
 import { toApiError } from '@/api/errors'
+import { DEFAULT_TARGET_LANGUAGE_CODE, TARGET_LANGUAGES } from '@/utils/languages'
 import type { SubtitleLineDto, SubtitleTokenDto } from '@/types/api'
 
 const props = defineProps<{ videoId: string }>()
@@ -20,7 +21,7 @@ const videoStore = useVideoStore()
 const watchSessionStore = useWatchSessionStore()
 
 const numericVideoId = computed(() => Number(props.videoId))
-const targetLanguage = computed(() => (typeof route.query.lang === 'string' ? route.query.lang : 'en'))
+const targetLanguage = computed(() => (typeof route.query.lang === 'string' ? route.query.lang : DEFAULT_TARGET_LANGUAGE_CODE))
 
 const youtubeVideoId = ref<string | null>(null)
 const title = ref<string | null>(null)
@@ -84,6 +85,14 @@ function closePopup() {
 
 // --- Translation display: hidden by default, toggled on demand. ---
 const showTranslation = ref(false)
+
+async function onTargetLanguageChange(event: Event) {
+  const newLang = (event.target as HTMLSelectElement).value
+  if (newLang === targetLanguage.value) return
+  await router.replace({ query: { ...route.query, lang: newLang } })
+  watchSessionStore.setActive(numericVideoId.value, title.value, newLang)
+  await subtitlesStore.init(numericVideoId.value, newLang)
+}
 
 // --- Hold (long-press) a line to reveal a small repeat icon in its top-right corner;
 // hold the icon itself to toggle looping that line until turned off. A short/plain
@@ -304,8 +313,10 @@ onMounted(async () => {
     void videoApi.recordWatch(numericVideoId.value).catch(() => {})
     watchSessionStore.setActive(numericVideoId.value, summary.title, targetLanguage.value)
 
-    resumePositionMs.value = summary.lastPositionMs
-    lastPersistedPositionMs = summary.lastPositionMs
+    const durationMs = summary.durationSeconds ? summary.durationSeconds * 1000 : 0
+    const isNearEnd = durationMs > 0 && summary.lastPositionMs >= durationMs - 5000
+    resumePositionMs.value = isNearEnd ? 0 : summary.lastPositionMs
+    lastPersistedPositionMs = resumePositionMs.value
     await subtitlesStore.init(numericVideoId.value, targetLanguage.value)
 
     // Must flip this before onPlayerReady can ever fire: <YoutubePlayer> is gated behind
@@ -357,15 +368,28 @@ onUnmounted(() => {
       <div class="transcript-col">
         <div class="transcript-panel">
           <div class="transcript-toolbar">
-            <button
-              class="btn btn-sm"
-              :class="showTranslation ? 'btn-primary' : 'btn-outline-primary'"
-              type="button"
-              :disabled="subtitlesStore.sameLanguage"
-              @click="showTranslation = !showTranslation"
-            >
-              {{ showTranslation ? '✓ Bản dịch' : 'Bản dịch' }}
-            </button>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <button
+                class="btn btn-sm text-nowrap"
+                :class="showTranslation ? 'btn-primary' : 'btn-outline-primary'"
+                type="button"
+                :disabled="subtitlesStore.sameLanguage"
+                @click="showTranslation = !showTranslation"
+              >
+                {{ showTranslation ? '✓ Bản dịch' : 'Bản dịch' }}
+              </button>
+
+              <select
+                :value="targetLanguage"
+                class="form-select form-select-sm language-select"
+                aria-label="Chọn ngôn ngữ dịch"
+                @change="onTargetLanguageChange"
+              >
+                <option v-for="lang in TARGET_LANGUAGES" :key="lang.code" :value="lang.code">
+                  Dịch: {{ lang.label }}
+                </option>
+              </select>
+            </div>
 
             <div class="download-menu">
               <button
@@ -517,6 +541,10 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0.75rem 0.75rem 0;
+}
+
+.language-select {
+  width: auto;
 }
 
 .translation-warning {

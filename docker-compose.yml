@@ -1,62 +1,105 @@
+name: sublearn
+
+# Usage:
+#   1. cp .env.example .env   (then set JWT_SECRET >= 32 chars, GEMINI_API_KEY)
+#   2. (optional) put yt-dlp cookies at ./secrets/youtube-cookies.txt
+#   3. docker compose up -d --build
+#   FE: http://localhost:${FRONTEND_PORT:-5173}  |  BE: http://localhost:${BACKEND_PORT:-8080}
+
 services:
   mysql:
     image: mysql:8.4
+    container_name: sublearn-mysql
     restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     environment:
-      MYSQL_DATABASE: sublearn
-      MYSQL_USER: sublearn
-      MYSQL_PASSWORD: sublearn
-      MYSQL_ROOT_PASSWORD: sublearn
+      MYSQL_DATABASE: ${DB_NAME:-sublearn}
+      MYSQL_USER: ${DB_USERNAME:-sublearn}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-sublearn}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-sublearn}
+      TZ: UTC
     ports:
-      - "3306:3306"
+      # Change MYSQL_PORT in .env if 3306 is already used by a local MySQL
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - sublearn-mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-psublearn"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 30
+      start_period: 20s
+    networks:
+      - sublearn-net
 
   backend:
     build:
       context: ./BE/SubLearn
+    container_name: sublearn-backend
     restart: unless-stopped
     environment:
       DB_HOST: mysql
       DB_PORT: 3306
-      DB_NAME: sublearn
-      DB_USERNAME: sublearn
-      DB_PASSWORD: sublearn
+      DB_NAME: ${DB_NAME:-sublearn}
+      DB_USERNAME: ${DB_USERNAME:-sublearn}
+      DB_PASSWORD: ${DB_PASSWORD:-sublearn}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
       YTDLP_PATH: yt-dlp
-      YTDLP_COOKIES_PATH: /tmp/youtube-cookies.txt
+      YTDLP_TIMEOUT_SECONDS: ${YTDLP_TIMEOUT_SECONDS:-60}
+      # HS256 requires a secret of at least 32 bytes
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env - see .env.example}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-lite-latest}
+      GEMINI_READ_TIMEOUT_MS: ${GEMINI_READ_TIMEOUT_MS:-60000}
+      GEMINI_CONNECT_TIMEOUT_MS: ${GEMINI_CONNECT_TIMEOUT_MS:-10000}
+      TZ: UTC
     volumes:
-      - ./secrets/youtube-cookies.txt:/run/secrets/youtube-cookies-source.txt:ro
+      # Mount the whole folder so the stack still starts when the cookies file is absent
+      # (mounting a missing single file makes Docker create a directory in its place).
+      - ./secrets:/run/secrets/sublearn:ro
     entrypoint:
       - sh
       - -c
-      - >-
-        cp /run/secrets/youtube-cookies-source.txt /tmp/youtube-cookies.txt
-        && chmod 600 /tmp/youtube-cookies.txt
-        && exec java -jar app.jar
+      - |
+        if [ -s /run/secrets/sublearn/youtube-cookies.txt ]; then
+          cp /run/secrets/sublearn/youtube-cookies.txt /tmp/youtube-cookies.txt
+          chmod 600 /tmp/youtube-cookies.txt
+          export YTDLP_COOKIES_PATH=/tmp/youtube-cookies.txt
+          echo "[entrypoint] yt-dlp cookies loaded"
+        else
+          export YTDLP_COOKIES_PATH=
+          echo "[entrypoint] WARNING: ./secrets/youtube-cookies.txt not found - yt-dlp runs without cookies"
+        fi
+        exec java $${JAVA_OPTS:-} -jar app.jar
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
       mysql:
         condition: service_healthy
+    networks:
+      - sublearn-net
 
   frontend:
     build:
       context: ./FE
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+        # Baked in at build time. Empty = same-origin: the browser calls /api/... on
+        # the frontend host and nginx proxies it to the backend container.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+    container_name: sublearn-frontend
     restart: unless-stopped
     ports:
-      - "5173:80"
+      - "${FRONTEND_PORT:-5173}:80"
     depends_on:
       - backend
+    networks:
+      - sublearn-net
+
+networks:
+  sublearn-net:
+    driver: bridge
 
 volumes:
   sublearn-mysql-data:

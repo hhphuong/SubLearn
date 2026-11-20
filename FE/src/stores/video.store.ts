@@ -82,6 +82,8 @@ export const useVideoStore = defineStore('video', () => {
         }
         pollTimer = setTimeout(tick, POLL_INTERVAL_MS)
       } catch {
+        status.value = 'FAILED'
+        failureReason.value = 'UNKNOWN_ERROR'
         stopPolling()
       }
     }
@@ -89,9 +91,9 @@ export const useVideoStore = defineStore('video', () => {
     void tick()
   }
 
-  async function submit(youtubeUrl: string, sourceLanguage: string) {
+  async function submit(youtubeUrl: string, sourceLanguage: string, targetLanguage?: string) {
     reset()
-    const response = await videoApi.submit(youtubeUrl, sourceLanguage)
+    const response = await videoApi.submit(youtubeUrl, sourceLanguage, targetLanguage)
     trackSubmission(response.videoId, response.status)
   }
 
