@@ -19,6 +19,7 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<MeResponse | null>(null)
 
   const isAuthenticated = computed(() => !!accessToken.value)
+  const isAdmin = computed(() => user.value?.role === 'ADMIN')
 
   function persist() {
     const payload: PersistedAuth = {
@@ -110,6 +111,7 @@ export const useAuthStore = defineStore('auth', () => {
     expiresAt,
     user,
     isAuthenticated,
+    isAdmin,
     hydrate,
     login,
     register,

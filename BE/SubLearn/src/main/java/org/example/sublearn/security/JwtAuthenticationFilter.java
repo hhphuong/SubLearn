@@ -5,6 +5,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -30,9 +31,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith(BEARER_PREFIX)) {
             String token = header.substring(BEARER_PREFIX.length());
-            Optional<Long> userId = jwtService.parseUserId(token);
-            if (userId.isPresent() && SecurityContextHolder.getContext().getAuthentication() == null) {
-                var authentication = new UsernamePasswordAuthenticationToken(userId.get(), null, List.of());
+            Optional<JwtService.ParsedToken> parsed = jwtService.parseAccessToken(token);
+            if (parsed.isPresent() && SecurityContextHolder.getContext().getAuthentication() == null) {
+                JwtService.ParsedToken tokenInfo = parsed.get();
+                var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + tokenInfo.role().name()));
+                var authentication = new UsernamePasswordAuthenticationToken(tokenInfo.userId(), null, authorities);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         }

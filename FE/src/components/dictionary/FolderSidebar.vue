@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { useDictionaryStore } from '@/stores/dictionary.store'
 import { toApiError } from '@/api/errors'
+import AppModal from '@/components/common/AppModal.vue'
 
 const props = defineProps<{ sourceLanguage: string }>()
 
@@ -9,6 +10,7 @@ const dictionaryStore = useDictionaryStore()
 const isCreating = ref(false)
 const newFolderName = ref('')
 const createError = ref<string | null>(null)
+const deleteFolderTarget = ref<{ id: number; name: string } | null>(null)
 
 watch(
   () => props.sourceLanguage,
@@ -43,8 +45,14 @@ async function confirmCreate() {
   }
 }
 
-async function onDeleteFolder(id: number, name: string) {
-  if (!confirm(`Xóa folder "${name}"? Các từ trong folder sẽ không bị xóa, chỉ chuyển về "Chưa phân loại".`)) return
+function onDeleteFolder(id: number, name: string) {
+  deleteFolderTarget.value = { id, name }
+}
+
+async function confirmDeleteFolder() {
+  if (!deleteFolderTarget.value) return
+  const id = deleteFolderTarget.value.id
+  deleteFolderTarget.value = null
   await dictionaryStore.removeFolder(id)
   dictionaryStore.fetchList(true)
 }
@@ -94,6 +102,19 @@ async function onDeleteFolder(id: number, name: string) {
       </button>
       <div v-if="createError" class="text-danger small mt-1">{{ createError }}</div>
     </template>
+
+    <AppModal
+      :show="deleteFolderTarget !== null"
+      title="Cảnh báo xóa folder"
+      :message="`Xóa folder &quot;${deleteFolderTarget?.name}&quot;?\nCác từ trong folder sẽ không bị xóa, chỉ chuyển về &quot;Chưa phân loại&quot;.`"
+      type="confirm"
+      variant="warning"
+      confirm-text="Xóa folder"
+      cancel-text="Hủy"
+      @confirm="confirmDeleteFolder"
+      @cancel="deleteFolderTarget = null"
+      @close="deleteFolderTarget = null"
+    />
   </div>
 </template>
 

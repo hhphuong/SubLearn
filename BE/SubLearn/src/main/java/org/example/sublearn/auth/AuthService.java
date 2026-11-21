@@ -52,6 +52,10 @@ public class AuthService {
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new BadCredentialsException("Invalid credentials");
         }
+        if (user.isLocked()) {
+            throw ApiException.forbidden("ACCOUNT_LOCKED",
+                    "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
+        }
         return issueTokens(user);
     }
 
@@ -63,8 +67,14 @@ public class AuthService {
         if (!existing.isActive()) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", "Refresh token is invalid or expired");
         }
+        AppUser user = existing.getUser();
+        if (user.isLocked()) {
+            existing.revoke();
+            throw ApiException.forbidden("ACCOUNT_LOCKED",
+                    "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
+        }
         existing.revoke();
-        return issueTokens(existing.getUser());
+        return issueTokens(user);
     }
 
     @Transactional
@@ -77,11 +87,11 @@ public class AuthService {
     public MeResponse me(Long userId) {
         AppUser user = appUserRepository.findById(userId)
                 .orElseThrow(() -> ApiException.notFound("USER_NOT_FOUND", "User not found"));
-        return new MeResponse(user.getId(), user.getEmail(), user.getDisplayName());
+        return new MeResponse(user.getId(), user.getEmail(), user.getDisplayName(), user.getRole(), user.getStatus());
     }
 
     private AuthResponse issueTokens(AppUser user) {
-        String accessToken = jwtService.generateAccessToken(user.getId(), user.getEmail());
+        String accessToken = jwtService.generateAccessToken(user.getId(), user.getEmail(), user.getRole());
         String rawRefreshToken = jwtService.generateOpaqueRefreshToken();
         String refreshTokenHash = jwtService.hashToken(rawRefreshToken);
         Instant expiresAt = Instant.now().plus(jwtService.getRefreshTokenTtl());

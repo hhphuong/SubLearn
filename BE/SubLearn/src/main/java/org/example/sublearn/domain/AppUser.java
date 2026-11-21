@@ -2,6 +2,8 @@ package org.example.sublearn.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -28,6 +30,14 @@ public class AppUser {
     @Column(name = "display_name")
     private String displayName;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private UserRole role = UserRole.USER;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private UserStatus status = UserStatus.ACTIVE;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -43,6 +53,8 @@ public class AppUser {
         this.email = email;
         this.passwordHash = passwordHash;
         this.displayName = displayName;
+        this.role = UserRole.USER;
+        this.status = UserStatus.ACTIVE;
     }
 
     public Long getId() {
@@ -63,6 +75,30 @@ public class AppUser {
 
     public String getDisplayName() {
         return displayName;
+    }
+
+    public UserRole getRole() {
+        return role;
+    }
+
+    public void setRole(UserRole role) {
+        this.role = role;
+    }
+
+    public UserStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(UserStatus status) {
+        this.status = status;
+    }
+
+    public boolean isLocked() {
+        return status == UserStatus.LOCKED;
+    }
+
+    public boolean isAdmin() {
+        return role == UserRole.ADMIN;
     }
 
     public Instant getCreatedAt() {

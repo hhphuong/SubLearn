@@ -1,12 +1,14 @@
 package org.example.sublearn.auth;
 
 import jakarta.validation.Valid;
+import org.example.sublearn.admin.PasswordResetService;
 import org.example.sublearn.auth.dto.AuthResponse;
 import org.example.sublearn.auth.dto.LoginRequest;
 import org.example.sublearn.auth.dto.MeResponse;
 import org.example.sublearn.auth.dto.RefreshRequest;
 import org.example.sublearn.auth.dto.RegisterRequest;
 import org.example.sublearn.auth.dto.RegisterResponse;
+import org.example.sublearn.auth.dto.ResetPasswordRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,9 +23,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final PasswordResetService passwordResetService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, PasswordResetService passwordResetService) {
         this.authService = authService;
+        this.passwordResetService = passwordResetService;
     }
 
     @PostMapping("/register")
@@ -51,5 +55,11 @@ public class AuthController {
     @GetMapping("/me")
     public MeResponse me(@AuthenticationPrincipal Long userId) {
         return authService.me(userId);
+    }
+
+    @PostMapping("/reset-password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        passwordResetService.completePasswordReset(request.token(), request.newPassword());
     }
 }

@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import org.example.sublearn.common.Sha256;
+import org.example.sublearn.domain.UserRole;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +23,9 @@ import java.util.Optional;
 public class JwtService {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    public record ParsedToken(Long userId, UserRole role) {
+    }
 
     private final SecretKey key;
     private final Duration accessTokenTtl;
@@ -40,22 +44,45 @@ public class JwtService {
     }
 
     public String generateAccessToken(Long userId, String email) {
+        return generateAccessToken(userId, email, UserRole.USER);
+    }
+
+    public String generateAccessToken(Long userId, String email, UserRole role) {
+        UserRole effectiveRole = role != null ? role : UserRole.USER;
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .claim("email", email)
+                .claim("role", effectiveRole.name())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTokenTtl)))
                 .signWith(key, Jwts.SIG.HS256)
                 .compact();
     }
 
-    public Optional<Long> parseUserId(String token) {
+    public Optional<ParsedToken> parseAccessToken(String token) {
         try {
             Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
-            return Optional.of(Long.valueOf(claims.getSubject()));
+            Long userId = Long.valueOf(claims.getSubject());
+            UserRole role = parseRole(claims.get("role", String.class));
+            return Optional.of(new ParsedToken(userId, role));
         } catch (JwtException | IllegalArgumentException e) {
             return Optional.empty();
+        }
+    }
+
+    public Optional<Long> parseUserId(String token) {
+        return parseAccessToken(token).map(ParsedToken::userId);
+    }
+
+    private static UserRole parseRole(String rawRole) {
+        if (rawRole == null || rawRole.isBlank()) {
+            return UserRole.USER;
+        }
+        try {
+            return UserRole.valueOf(rawRole);
+        } catch (IllegalArgumentException e) {
+            return UserRole.USER;
         }
     }
 

@@ -14,4 +14,6 @@ public interface DictionaryFolderRepository extends JpaRepository<DictionaryFold
     Optional<DictionaryFolder> findByIdAndUser(Long id, AppUser user);
 
     boolean existsByUserAndSourceLanguageAndNameIgnoreCase(AppUser user, String sourceLanguage, String name);
+
+    long countByUser_Id(Long userId);
 }

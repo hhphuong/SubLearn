@@ -54,10 +54,201 @@ export interface AuthResponse {
   expiresIn: number
 }
 
+export type UserRole = 'USER' | 'ADMIN'
+
+export type UserStatus = 'ACTIVE' | 'LOCKED'
+
 export interface MeResponse {
   userId: number
   email: string
   displayName: string | null
+  role: UserRole
+  status: UserStatus
+}
+
+export interface ResetPasswordRequest {
+  token: string
+  newPassword: string
+}
+
+export type AdminDashboardRange = '24h' | '7d' | '30d' | 'all'
+
+export interface DailyCountDto {
+  date: string
+  count: number
+}
+
+export interface FailureReasonCountDto {
+  reason: FailureReason
+  count: number
+}
+
+export interface AdminDashboardOverviewResponse {
+  range: string
+  users: {
+    total: number
+    active: number
+    locked: number
+    admins: number
+    newInRange: number
+    activeInRange: number
+  }
+  videos: {
+    total: number
+    ready: number
+    processing: number
+    pending: number
+    failed: number
+    createdInRange: number
+  }
+  jobs: {
+    totalInRange: number
+    pending: number
+    processing: number
+    completedInRange: number
+    failedInRange: number
+    successRatePercent: number
+    byTypeInRange: Record<string, number>
+  }
+  cacheAndDictionary: {
+    wordCacheReady: number
+    wordCacheFailed: number
+    totalDictionaryEntries: number
+  }
+  dailyVideos: DailyCountDto[]
+  dailyFailedJobs: DailyCountDto[]
+  failureReasons: FailureReasonCountDto[]
+}
+
+export interface AdminSystemHealthResponse {
+  mysql: {
+    status: string
+    message: string
+  }
+  rabbitmq: {
+    status: string
+    message: string
+    videoJobs: number
+    retryJobs: number
+    dlqJobs: number
+  }
+  ytDlp: {
+    status: string
+    version: string | null
+    cookiesConfigured: boolean
+    message: string
+  }
+  gemini: {
+    status: string
+    apiKeyConfigured: boolean
+    model: string
+    translationFailuresLast24h: number
+    message: string
+  }
+}
+
+export interface RabbitQueueStatsResponse {
+  reachable: boolean
+  videoJobs: number
+  retryJobs: number
+  dlqJobs: number
+  bulkRetryMaxBatch: number
+}
+
+export interface AdminUserSummaryDto {
+  id: number
+  email: string
+  displayName: string | null
+  role: UserRole
+  status: UserStatus
+  createdAt: string
+  updatedAt: string
+  activeSessionCount: number
+  libraryVideoCount: number
+  dictionaryEntryCount: number
+}
+
+export interface AdminUserPageResponse {
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  users: AdminUserSummaryDto[]
+}
+
+export interface AdminUserRecentVideoDto {
+  videoId: number
+  youtubeVideoId: string
+  title: string | null
+  sourceLanguage: string | null
+  lastWatchedAt: string
+}
+
+export interface AdminUserDetailResponse {
+  id: number
+  email: string
+  displayName: string | null
+  role: UserRole
+  status: UserStatus
+  createdAt: string
+  updatedAt: string
+  activeSessionCount: number
+  libraryVideoCount: number
+  submittedVideoCount: number
+  dictionaryEntryCount: number
+  dictionaryFolderCount: number
+  recentVideos: AdminUserRecentVideoDto[]
+}
+
+export interface RevokeSessionsResponse {
+  userId: number
+  revokedCount: number
+}
+
+export interface SendPasswordResetResponse {
+  userId: number
+  email: string
+  expiresAt: string
+}
+
+export interface AdminJobItemDto {
+  jobId: number
+  videoId: number
+  youtubeVideoId: string
+  videoTitle: string | null
+  requestedByUserId: number | null
+  requestedByEmail: string | null
+  jobType: JobType
+  status: JobStatus
+  sourceLanguage: string | null
+  targetLanguage: string | null
+  retryCount: number
+  maxRetries: number
+  progressPercent: number
+  failureReason: FailureReason | null
+  failureMessage: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdminJobPageResponse {
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  jobs: AdminJobItemDto[]
+}
+
+export interface BulkRetryResponse {
+  requestedCount: number
+  retriedCount: number
+  skippedIds: number[]
+  createdJobIds: number[]
+}
+
+export interface PurgeDlqResponse {
+  queueName: string
+  purgedCount: number
 }
 
 export interface VideoSubmitResponse {

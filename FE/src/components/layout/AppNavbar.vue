@@ -30,6 +30,21 @@ async function onLogout() {
 
       <div class="app-navbar__actions">
         <template v-if="authStore.isAuthenticated">
+          <RouterLink
+            v-if="authStore.isAdmin"
+            class="app-navbar__admin-btn"
+            to="/admin"
+            title="Vào trang quản trị"
+          >
+            <svg class="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <span>Quản trị</span>
+          </RouterLink>
+
           <span class="app-navbar__user">{{ authStore.user?.displayName || authStore.user?.email }}</span>
           <button class="btn-logout" type="button" @click="onLogout">
             <svg class="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -99,55 +114,92 @@ async function onLogout() {
   color: var(--brand-green-dark);
 }
 
-.app-navbar__link.router-link-exact-active {
+.app-navbar__link.router-link-active {
   background: var(--brand-green-light);
   color: var(--brand-green-dark);
+  font-weight: 700;
 }
 
 .app-navbar__actions {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-left: auto;
+}
+
+.app-navbar__admin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--brand-green-light);
+  color: var(--brand-green-dark);
+  border: 1px solid rgba(22, 163, 74, 0.25);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  text-decoration: none;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.app-navbar__admin-btn:hover {
+  background: var(--brand-green);
+  color: #fff;
 }
 
 .app-navbar__user {
-  color: var(--brand-muted);
-  font-size: 0.875rem;
-  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--brand-ink);
+  font-weight: 500;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .btn-logout {
-  height: 34px;
-  padding: 0 0.75rem;
-  border-radius: 8px;
-  background: #ffffff;
-  border: 1px solid #dcdfe4;
-  color: #4a5568;
-  font-size: 0.85rem;
-  font-weight: 500;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--brand-muted);
+  background: transparent;
+  border: 1px solid var(--brand-border);
+  border-radius: 999px;
   cursor: pointer;
   transition: all 0.15s ease;
-  user-select: none;
 }
 
 .btn-logout:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-  color: #1f2937;
+  color: #dc3545;
+  border-color: #dc3545;
+  background: #fff5f5;
 }
 
 .btn-icon {
-  display: inline-block;
-  vertical-align: middle;
   flex-shrink: 0;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  .app-navbar__inner {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+  }
+
   .app-navbar__links {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+  }
+
+  .app-navbar__actions {
+    margin-left: auto;
+  }
+
+  .app-navbar__user {
     display: none;
   }
 }

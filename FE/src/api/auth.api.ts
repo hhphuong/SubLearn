@@ -17,4 +17,7 @@ export const authApi = {
   me() {
     return http.get<MeResponse>('/api/auth/me').then((r) => r.data)
   },
+  resetPassword(token: string, newPassword: string) {
+    return http.post<void>('/api/auth/reset-password', { token, newPassword }).then((r) => r.data)
+  },
 }

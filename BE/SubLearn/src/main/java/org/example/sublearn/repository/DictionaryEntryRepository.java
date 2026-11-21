@@ -35,4 +35,6 @@ public interface DictionaryEntryRepository extends JpaRepository<DictionaryEntry
     Optional<DictionaryEntry> findByIdAndUser(Long id, AppUser user);
 
     long countByFolder(DictionaryFolder folder);
+
+    long countByUser_Id(Long userId);
 }

@@ -9,6 +9,7 @@ import { useSubtitleSync } from '@/composables/useSubtitleSync'
 import YoutubePlayer from '@/components/watch/YoutubePlayer.vue'
 import SubtitleLine from '@/components/watch/SubtitleLine.vue'
 import WordPopup from '@/components/watch/WordPopup.vue'
+import AppModal from '@/components/common/AppModal.vue'
 import { toApiError } from '@/api/errors'
 import { DEFAULT_TARGET_LANGUAGE_CODE, TARGET_LANGUAGES, languageLabel } from '@/utils/languages'
 import type { ProcessingJobResponse, SubtitleLineDto, SubtitleTokenDto } from '@/types/api'
@@ -82,10 +83,68 @@ function closePopup() {
   activeTokenLine.value = null
 }
 
+// --- Modal Dialog state (replaces native alert/confirm and inline alert banners) ---
+const modalState = ref<{
+  show: boolean
+  title: string
+  message: string
+  type: 'confirm' | 'alert'
+  variant: 'warning' | 'danger' | 'info'
+  confirmText?: string
+  cancelText?: string
+  onConfirm?: () => void | Promise<void>
+}>({
+  show: false,
+  title: 'Cảnh báo',
+  message: '',
+  type: 'alert',
+  variant: 'warning',
+})
+
+function showAlert(message: string, title = 'Cảnh báo', variant: 'warning' | 'danger' | 'info' = 'warning') {
+  modalState.value = {
+    show: true,
+    title,
+    message,
+    type: 'alert',
+    variant,
+    confirmText: 'Đóng',
+  }
+}
+
+function showConfirm(
+  message: string,
+  onConfirm: () => void | Promise<void>,
+  title = 'Cảnh báo',
+  variant: 'warning' | 'danger' = 'warning',
+) {
+  modalState.value = {
+    show: true,
+    title,
+    message,
+    type: 'confirm',
+    variant,
+    confirmText: 'Xác nhận',
+    cancelText: 'Hủy',
+    onConfirm,
+  }
+}
+
+function closeModal() {
+  modalState.value.show = false
+}
+
+async function handleModalConfirm() {
+  const cb = modalState.value.onConfirm
+  modalState.value.show = false
+  if (cb) {
+    await cb()
+  }
+}
+
 // --- Translation display & async translation/reprocess job tracking ---
 const showTranslation = ref(false)
 const translationJob = ref<ProcessingJobResponse | null>(null)
-const translationActionError = ref<string | null>(null)
 const isSubmittingTranslationJob = ref(false)
 let translationJobPollTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -118,6 +177,7 @@ function startTranslationJobPolling(job: ProcessingJobResponse) {
       }
       if (latest.status === 'FAILED') {
         stopTranslationJobPolling()
+        showAlert(`Có lỗi khi dịch phụ đề sang ${languageLabel(targetLanguage.value)}! Vui lòng thử lại.`, 'Cảnh báo', 'danger')
         return
       }
       translationJobPollTimer = setTimeout(poll, 1500)
@@ -139,13 +199,12 @@ function syncActiveJobFromSubtitles() {
 }
 
 async function onRequestTranslation() {
-  translationActionError.value = null
   isSubmittingTranslationJob.value = true
   try {
     const job = await videoApi.requestTranslation(numericVideoId.value, targetLanguage.value)
     startTranslationJobPolling(job)
   } catch (error) {
-    translationActionError.value = toApiError(error).message
+    showAlert(toApiError(error).message, 'Cảnh báo lỗi', 'danger')
   } finally {
     isSubmittingTranslationJob.value = false
   }
@@ -153,13 +212,12 @@ async function onRequestTranslation() {
 
 async function onRetryTranslationJob() {
   if (!translationJob.value) return
-  translationActionError.value = null
   isSubmittingTranslationJob.value = true
   try {
     const job = await jobApi.retryJob(translationJob.value.jobId)
     startTranslationJobPolling(job)
   } catch (error) {
-    translationActionError.value = toApiError(error).message
+    showAlert(toApiError(error).message, 'Cảnh báo lỗi', 'danger')
   } finally {
     isSubmittingTranslationJob.value = false
   }
@@ -169,7 +227,7 @@ async function onTargetLanguageChange(event: Event) {
   const newLang = (event.target as HTMLSelectElement).value
   if (newLang === targetLanguage.value) return
   stopTranslationJobPolling()
-  translationActionError.value = null
+  closeModal()
   await router.replace({ query: { ...route.query, lang: newLang } })
   watchSessionStore.setActive(numericVideoId.value, title.value, newLang)
   await subtitlesStore.init(numericVideoId.value, newLang)
@@ -353,24 +411,26 @@ async function onDownload(mode: 'original' | 'translation' | 'bilingual') {
 // via RabbitMQ without re-fetching subtitles from YouTube. Keeps the user right here on
 // WatchView and refreshes translations automatically once COMPLETED. ---
 const isReprocessing = ref(false)
-const reprocessError = ref<string | null>(null)
 
-async function onReprocess() {
-  if (subtitlesStore.sameLanguage) return
+function onReprocess() {
+  if (subtitlesStore.sameLanguage || !subtitlesStore.translationAvailable) return
   const langName = languageLabel(targetLanguage.value)
-  if (!window.confirm(`Dịch lại toàn bộ bản dịch sang ${langName} cho video này?`)) {
-    return
-  }
-  reprocessError.value = null
-  isReprocessing.value = true
-  try {
-    const job = await videoApi.reprocess(numericVideoId.value, targetLanguage.value)
-    startTranslationJobPolling(job)
-  } catch (error) {
-    reprocessError.value = toApiError(error).message
-  } finally {
-    isReprocessing.value = false
-  }
+  showConfirm(
+    `Dịch lại toàn bộ bản dịch sang ${langName} cho video này?\nQuá trình dịch có thể mất một vài phút.`,
+    async () => {
+      isReprocessing.value = true
+      try {
+        const job = await videoApi.reprocess(numericVideoId.value, targetLanguage.value)
+        startTranslationJobPolling(job)
+      } catch (error) {
+        showAlert(toApiError(error).message, 'Cảnh báo lỗi', 'danger')
+      } finally {
+        isReprocessing.value = false
+      }
+    },
+    'Xác nhận dịch lại',
+    'warning',
+  )
 }
 
 function onDocumentClick(event: MouseEvent) {
@@ -497,7 +557,7 @@ onUnmounted(() => {
                   <button
                     class="download-menu__item"
                     type="button"
-                    :disabled="subtitlesStore.sameLanguage"
+                    :disabled="subtitlesStore.sameLanguage || !subtitlesStore.translationAvailable"
                     @click="onDownload('translation')"
                   >
                     Tải bản dịch
@@ -505,7 +565,7 @@ onUnmounted(() => {
                   <button
                     class="download-menu__item"
                     type="button"
-                    :disabled="subtitlesStore.sameLanguage"
+                    :disabled="subtitlesStore.sameLanguage || !subtitlesStore.translationAvailable"
                     @click="onDownload('bilingual')"
                   >
                     Tải phụ đề song ngữ
@@ -518,7 +578,7 @@ onUnmounted(() => {
               <button
                 class="btn-ghost-action"
                 type="button"
-                :disabled="isReprocessing || isTranslationJobActive || subtitlesStore.sameLanguage"
+                :disabled="isReprocessing || isTranslationJobActive || subtitlesStore.sameLanguage || !subtitlesStore.translationAvailable"
                 title="Dịch lại bản dịch cho ngôn ngữ đang chọn (không tải lại phụ đề gốc)"
                 @click="onReprocess"
               >
@@ -531,10 +591,6 @@ onUnmounted(() => {
                 <span>{{ isReprocessing || isTranslationJobActive ? 'Đang dịch...' : 'Dịch lại phụ đề' }}</span>
               </button>
             </div>
-          </div>
-
-          <div v-if="reprocessError || translationActionError" class="alert alert-danger py-1 px-2 small mx-2 mt-2 mb-0">
-            {{ reprocessError || translationActionError }}
           </div>
 
           <div v-if="isTranslationJobActive && translationJob" class="translation-banner translation-banner--progress">
@@ -644,6 +700,20 @@ onUnmounted(() => {
       :video-id="numericVideoId"
       :subtitle-line-id="activeTokenLine.id"
       @close="closePopup"
+    />
+
+    <AppModal
+      :show="modalState.show"
+      :title="modalState.title"
+      :message="modalState.message"
+      :type="modalState.type"
+      :variant="modalState.variant"
+      :confirm-text="modalState.confirmText"
+      :cancel-text="modalState.cancelText"
+      :is-processing="isReprocessing || isSubmittingTranslationJob"
+      @confirm="handleModalConfirm"
+      @cancel="closeModal"
+      @close="closeModal"
     />
   </div>
 </template>

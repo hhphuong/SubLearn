@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useDictionaryStore } from '@/stores/dictionary.store'
 import { languageLabel } from '@/utils/languages'
+import AppModal from '@/components/common/AppModal.vue'
 import type { DictionaryContextDto, DictionaryEntrySummaryResponse } from '@/types/api'
 
 const props = defineProps<{ entry: DictionaryEntrySummaryResponse }>()
@@ -11,6 +12,7 @@ const dictionaryStore = useDictionaryStore()
 const isExpanded = ref(false)
 const contexts = ref<DictionaryContextDto[]>([])
 const isLoadingContexts = ref(false)
+const showDeleteConfirm = ref(false)
 
 async function toggleExpand() {
   isExpanded.value = !isExpanded.value
@@ -26,9 +28,12 @@ async function toggleExpand() {
 }
 
 function onDelete() {
-  if (confirm(`Xóa "${props.entry.displayWord}" khỏi từ điển?`)) {
-    emit('delete', props.entry.id)
-  }
+  showDeleteConfirm.value = true
+}
+
+function confirmDelete() {
+  showDeleteConfirm.value = false
+  emit('delete', props.entry.id)
 }
 
 function formatDate(iso: string) {
@@ -73,6 +78,19 @@ function formatDate(iso: string) {
         </ul>
       </div>
     </div>
+
+    <AppModal
+      :show="showDeleteConfirm"
+      title="Cảnh báo xóa từ"
+      :message="`Bạn có chắc chắn muốn xóa &quot;${entry.displayWord}&quot; khỏi từ điển không?`"
+      type="confirm"
+      variant="danger"
+      confirm-text="Xóa"
+      cancel-text="Hủy"
+      @confirm="confirmDelete"
+      @cancel="showDeleteConfirm = false"
+      @close="showDeleteConfirm = false"
+    />
   </div>
 </template>
 

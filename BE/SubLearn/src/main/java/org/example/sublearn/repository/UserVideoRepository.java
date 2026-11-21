@@ -15,4 +15,6 @@ public interface UserVideoRepository extends JpaRepository<UserVideo, Long> {
 
     @EntityGraph(attributePaths = "video")
     Page<UserVideo> findByUser_IdAndVideo_Status(Long userId, VideoStatus status, Pageable pageable);
+
+    long countByUser_Id(Long userId);
 }

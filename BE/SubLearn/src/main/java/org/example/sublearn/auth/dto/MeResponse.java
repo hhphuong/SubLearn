@@ -1,4 +1,7 @@
 package org.example.sublearn.auth.dto;
 
-public record MeResponse(Long userId, String email, String displayName) {
+import org.example.sublearn.domain.UserRole;
+import org.example.sublearn.domain.UserStatus;
+
+public record MeResponse(Long userId, String email, String displayName, UserRole role, UserStatus status) {
 }

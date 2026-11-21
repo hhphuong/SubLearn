@@ -54,13 +54,14 @@ describe('DictionaryView', () => {
   })
 
   it('deletes an entry via the API and removes it from the list', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     vi.mocked(dictionaryApi.remove).mockResolvedValue(undefined)
 
     const wrapper = mountView()
     await flushPromises()
 
     await wrapper.find('button.btn-outline-danger').trigger('click')
+    await flushPromises()
+    await wrapper.find('.app-modal-footer .btn-primary').trigger('click')
     await flushPromises()
 
     expect(dictionaryApi.remove).toHaveBeenCalledWith(1)

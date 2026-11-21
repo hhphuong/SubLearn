@@ -18,8 +18,14 @@ async function onSubmit() {
   isSubmitting.value = true
   try {
     await authStore.login(email.value, password.value)
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
-    router.push(redirect)
+    const redirectQuery = typeof route.query.redirect === 'string' ? route.query.redirect : null
+    if (redirectQuery && redirectQuery !== '/') {
+      router.push(redirectQuery)
+    } else if (authStore.isAdmin) {
+      router.push({ name: 'admin-dashboard' })
+    } else {
+      router.push('/')
+    }
   } catch (error) {
     errorMessage.value = toApiError(error).message
   } finally {
